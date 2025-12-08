@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parallel Editing Demo - AI + Human</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <!-- Quill CSS -->
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/quill-cursors@3.0.0/dist/quill-cursors.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Merriweather:wght@300;400;700&display=swap"
+        rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="app-container">
+        <!-- Top Navigation Bar -->
+        <header class="top-bar">
+            <div class="d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-vector-pen text-primary fs-4"></i>
+                    <h5 class="mb-0 fw-bold">Parallel<span class="text-primary">Edit</span></h5>
+                </div>
+                <div class="vr mx-2"></div>
+
+                <!-- User Name Input -->
+                <div class="input-group input-group-sm" style="width: 200px;">
+                    <span class="input-group-text"><i class="bi bi-person"></i></span>
+                    <input type="text" id="user-name-input" class="form-control" placeholder="Your Name">
+                </div>
+
+                <div id="connection-status" class="status-badge text-secondary border-secondary">
+                    <span class="ai-mock-indicator" style="background-color: #cbd5e1;"></span> Connecting...
+                </div>
+                <div id="ai-mode-status" class="status-badge">
+                    <span class="ai-mock-indicator"></span> Mock AI Mode
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2">
+                <button id="btn-template" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-file-earmark-text me-1"></i> Load Template
+                </button>
+                <button id="btn-settings" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
+                    data-bs-target="#settingsModal">
+                    <i class="bi bi-gear me-1"></i> Settings
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Editor Section -->
+            <div class="editor-container">
+                <div id="editor"></div>
+            </div>
+
+            <!-- AI Sidebar -->
+            <aside class="sidebar premium-shadow">
+                <div class="ai-panel-header">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-robot me-2 text-primary"></i>AI Collaborator</h6>
+                    <small class="text-muted">Describe changes you want the AI to make.</small>
+                </div>
+                <div class="ai-panel-body d-flex flex-column">
+                    <div class="instruction-box">
+                        <label for="ai-instruction"
+                            class="form-label text-xs fw-bold text-uppercase text-secondary">Instruction</label>
+                        <textarea id="ai-instruction" class="form-control border-0 shadow-none p-0" rows="4"
+                            placeholder="e.g., 'Update the salary to $120,000 and add a remote work clause.'"></textarea>
+                    </div>
+
+                    <button id="btn-apply-ai" class="btn btn-ai mb-3">
+                        <i class="bi bi-stars"></i> Apply Instruction
+                    </button>
+
+                    <div class="alert alert-light border small text-muted mt-auto">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <strong>How it works:</strong> The AI edits the document in real-time alongside you using
+                        CRDTs.
+                        No conflicts, no jumping cursors.
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">AI Settings</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="settings-form">
+                        <div class="mb-3">
+                            <label class="form-label">API Key</label>
+                            <input type="password" id="api-key" class="form-control" placeholder="sk-...">
+                            <div class="form-text">Leave empty to use <strong>Mock AI</strong> mode (free demo).</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Base URL</label>
+                            <input type="text" id="base-url" class="form-control"
+                                placeholder="https://api.openai.com/v1" value="https://api.openai.com/v1">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Model Name</label>
+                            <input type="text" id="model-name" class="form-control" placeholder="gpt-4" value="gpt-4">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" id="btn-save-settings" class="btn btn-primary">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Conflict/Confirmation Modal -->
+    <div class="modal fade" id="conflictModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-warning">
+                <div class="modal-header bg-warning-subtle">
+                    <h5 class="modal-title text-warning-emphasis"><i
+                            class="bi bi-exclamation-triangle-fill me-2"></i>Edit Conflict Detected</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>The AI is attempting to edit the same section you are currently working on.</p>
+                    <p class="mb-0 text-muted small">Do you want to accept the AI's changes and overwrite this section?
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
+                        id="btn-reject-conflict">Discard AI Edit</button>
+                    <button type="button" class="btn btn-warning text-dark fw-bold" id="btn-accept-conflict">Accept
+                        Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toasts Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <i class="bi bi-info-circle-fill text-primary me-2"></i>
+                <strong class="me-auto">Notification</strong>
+                <small>Just now</small>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toast-message">
+                Hello, world! This is a toast message.
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Modules -->
+    <script type="module" src="script.js"></script>
+</body>
+
+</html>
