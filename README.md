@@ -1,6 +1,6 @@
 # ParallelEdit – AI + Human contract demo
 
-This is a pure front-end demo that mirrors the WebRTC/Yjs setup from [Ritesh17rb/parallel-editing](https://github.com/Ritesh17rb/parallel-editing) but keeps the original ParallelEdit UI. It follows the [agents/demos guidelines](https://github.com/sanand0/scripts/tree/live/agents/demos): self-serve, upload-friendly, demo cards, settings form, and a concise README that explains how to run it.
+This is a pure front-end demo that keeps the original ParallelEdit UI while implementing a WebRTC + Yjs collaboration stack that follows the [agents/demos guidelines](https://github.com/sanand0/scripts/tree/live/agents/demos): self-serve, upload-friendly, demo cards, settings form, and a concise README that explains how to run it.
 
 ## Features
 

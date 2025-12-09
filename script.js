@@ -1,6 +1,6 @@
 import * as Y from "https://esm.sh/yjs";
 import { WebrtcProvider } from "https://esm.sh/y-webrtc";
-import { WebsocketProvider } from "https://esm.sh/y-websocket";
+import { WebsocketProvider } from "https://cdn.jsdelivr.net/npm/y-websocket@1.5.10/dist/y-websocket.mjs";
 import { QuillBinding } from "https://esm.sh/y-quill";
 import Quill from "https://esm.sh/quill@1.3.6";
 import QuillCursors from "https://esm.sh/quill-cursors@3.0.0";
