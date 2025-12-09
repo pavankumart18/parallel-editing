@@ -14,8 +14,8 @@ body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-primary);
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
+    overflow-x: hidden;
 }
 
 .premium-shadow {
@@ -30,7 +30,8 @@ body {
 .app-container {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    min-height: 70vh;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .top-bar {
@@ -209,4 +210,22 @@ body {
     border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
+}
+
+.info-panels {
+    background: #eef2ff;
+}
+
+.history-list .list-group-item {
+    border-left: none;
+    border-right: none;
+}
+
+.history-list .list-group-item:first-child {
+    border-top: none;
+}
+
+.history-list .list-group-item:last-child {
+    border-bottom-left-radius: 0.5rem;
+    border-bottom-right-radius: 0.5rem;
 }

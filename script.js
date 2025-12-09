@@ -1,16 +1,13 @@
-import * as Y from 'https://esm.sh/yjs'
-import { WebrtcProvider } from 'https://esm.sh/y-webrtc'
-import { QuillBinding } from 'https://esm.sh/y-quill'
-import Quill from 'https://esm.sh/quill@1.3.6'
-import QuillCursors from 'https://esm.sh/quill-cursors@3.0.0'
-import diff from 'https://esm.sh/fast-diff'
+import * as Y from "https://esm.sh/yjs";
+import { WebrtcProvider } from "https://esm.sh/y-webrtc";
+import { QuillBinding } from "https://esm.sh/y-quill";
+import Quill from "https://esm.sh/quill@1.3.6";
+import QuillCursors from "https://esm.sh/quill-cursors@3.0.0";
+import diff from "https://esm.sh/fast-diff";
 
-Quill.register('modules/cursors', QuillCursors);
+Quill.register("modules/cursors", QuillCursors);
 
-/**
- * CONFIGURATION
- */
-const ROOM_NAME = 'parallel-contract-edit-demo-v1';
+const SETTINGS_KEY = "parallel_edit_settings";
 const TEMPLATE_TEXT = `
 EMPLOYMENT AGREEMENT
 
@@ -36,230 +33,347 @@ __________________________
 Company Representative
 `.trim();
 
-/**
- * STATE MANAGEMENT
- */
-const state = {
-    apiKey: localStorage.getItem('openai_api_key') || '',
-    baseUrl: localStorage.getItem('openai_base_url') || 'https://llmfoundry.straive.com/openai/v1',
-    model: 'gpt-4o-mini', // Assuming 'gpt-4.1-mini' meant 'gpt-4o-mini' or similar recent small model.
-    isAiTyping: false
-};
+const DATASET = [
+    { title: "Staff SWE Offer", role: "Staff SWE", location: "Austin, USA", comp: "$185k + 15%", updated: "2025-11-02" },
+    { title: "Principal PM Offer", role: "Principal PM", location: "Remote (USA)", comp: "$205k + 20%", updated: "2025-10-15" },
+    { title: "MSA · Acme Robotics", role: "MSA", location: "Global", comp: "Retainer $45k/qtr", updated: "2025-09-08" },
+    { title: "Contractor NDA", role: "NDA", location: "EU / USA", comp: "N/A", updated: "2025-08-21" }
+];
 
-// --- Suppress Expected Console Errors ---
-// The public signaling servers often reject connections or are down. 
-// This filters those specific errors to keep the demo console clean.
-const originalConsoleError = console.error;
-console.error = function (...args) {
-    if (args[0] && typeof args[0] === 'string' && args[0].includes('WebSocket connection to')) {
-        // Suppress flaky signaling server errors
-        return;
-    }
-    originalConsoleError.apply(console, args);
-};
-
-// --- Yjs Initialization ---
-const ydoc = new Y.Doc();
-
-const provider = new WebrtcProvider(ROOM_NAME, ydoc, {
-    signaling: [
-        'wss://signaling.yjs.dev',
-        'wss://y-webrtc-signaling-eu.herokuapp.com',
-        'wss://y-webrtc-signaling-us.herokuapp.com'
-    ]
-});
-
-const ytext = ydoc.getText('quill');
-
-// --- User Awareness (Me) ---
-const awareness = provider.awareness; // We borrow awareness from WebRTC (shared logic)
-// Assign a random user color
-const userColors = ['#2563eb', '#db2777', '#ca8a04', '#16a34a', '#0891b2'];
-const myColor = userColors[Math.floor(Math.random() * userColors.length)];
-const names = ['Human Editor', 'Legal Assoc.', 'Manager', 'Reviewer'];
-const myName = names[Math.floor(Math.random() * names.length)];
-
-// Initialize Awareness
-awareness.setLocalStateField('user', {
-    name: myName,
-    color: myColor
-});
-
-// Bind UI Input
-const nameInput = document.getElementById('user-name-input');
-nameInput.value = myName;
-nameInput.addEventListener('change', () => {
-    const newName = nameInput.value.trim() || 'Anonymous';
-    awareness.setLocalStateField('user', {
-        name: newName,
-        color: myColor
-    });
-});
-
-
-// --- Connection Status Logic ---
-const statusEl = document.getElementById('connection-status');
-
-const updateStatus = () => {
-    // We are connected if WebRTC is on OR if we see other users (via BroadcastChannel)
-    const isConnected = provider.connected || awareness.getStates().size > 1;
-
-    if (isConnected) {
-        statusEl.innerHTML = '<span class="ai-active-indicator"></span> Connected';
-        statusEl.classList.remove('text-secondary');
-        statusEl.classList.add('text-success', 'border-success');
-    } else {
-        // If we are alone and WebRTC is disconnected
-        statusEl.innerHTML = '<span class="ai-mock-indicator" style="background-color: #ef4444;"></span> Offline';
-        statusEl.classList.add('text-secondary');
-        statusEl.classList.remove('text-success', 'border-success');
-    }
-};
-
-provider.on('status', updateStatus);
-awareness.on('change', updateStatus); // Also update when peers appear/disappear anywhere
-updateStatus();
-
-
-// --- Quill Editor Setup ---
-const editorContainer = document.getElementById('editor');
-const quill = new Quill(editorContainer, {
-    modules: {
-        cursors: true, // Enable cursors module
-        toolbar: [
-            [{ header: [1, 2, false] }],
-            ['bold', 'italic', 'underline'],
-            [{ list: 'ordered' }, { list: 'bullet' }],
-            ['clean']
-        ]
-    },
-    placeholder: 'Waiting for contract...',
-    theme: 'snow'
-});
-
-// Bind Yjs to Quill
-const binding = new QuillBinding(ytext, quill, awareness);
-
-// --- AI Ghost Cursor (Awareness Strategy) ---
-// We sync AI cursors via the existing Yjs Awareness protocol.
-// This ensures cursors are EPHEMERAL (they disappear when the user disconnects).
-
-const cursorModule = quill.getModule('cursors');
-
-// Helper to update AI cursors from Awareness states
-const updateAiCursorsFromAwareness = () => {
-    const states = awareness.getStates(); // Map<clientID, stateObj>
-
-    // Track which agents are active to clean up stale ones
-    const activeAgentIds = new Set();
-
-    states.forEach((state, clientId) => {
-        if (!state.aiCursor) return; // This user has no active AI
-
-        const agentId = `ai-agent-${clientId}`;
-        activeAgentIds.add(agentId);
-
-        const data = state.aiCursor;
-        if (data.relPos) {
-            try {
-                // Decode position
-                // Note: Yjs awareness encodes Uint8Array as standard Arrays in JSON usually, 
-                // but direct local state is clean. Over wire it might change.
-                // We handle both.
-                let uint8Array = data.relPos;
-                if (!(uint8Array instanceof Uint8Array)) {
-                    uint8Array = new Uint8Array(Object.values(data.relPos));
-                }
-
-                const relPos = Y.decodeRelativePosition(uint8Array);
-                const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, ydoc);
-
-                if (absPos) {
-                    const name = data.name || 'AI Agent';
-                    const color = data.color || '#8b5cf6';
-
-                    cursorModule.createCursor(agentId, name, color);
-                    cursorModule.moveCursor(agentId, { index: absPos.index, length: data.length });
-                    cursorModule.toggleFlag(agentId, true);
-                }
-            } catch (e) {
-                console.warn(`Failed to render AI cursor for ${agentId}`, e);
-            }
-        }
-    });
-
-    // Cleanup: Remove any cursors that are no longer in the awareness states
-    // (We iterate the *cursor module's* known cursors? No, quill-cursors doesn't expose list easily)
-    // Actually, we can just remove cursors that are NOT in activeAgentIds?
-    // Quill-cursors unfortunately doesn't give us a list of all cursors easily without internal access.
-    // Hack: We rely on the fact that if 'aiCursor' field is removed, we get an update here.
-    // We should probably track known agents locally.
-};
-
-// Track known agents to allow removal
-let knownAiAgents = new Set();
-awareness.on('change', ({ added, updated, removed }) => {
-    // Standard update
-    updateAiCursorsFromAwareness();
-
-    // explicitly handle removals
-    removed.forEach(clientId => {
-        cursorModule.removeCursor(`ai-agent-${clientId}`);
-    });
-
-    // Also check if a user just cleared their 'aiCursor' field (update without aiCursor)
-    updated.forEach(clientId => {
-        const state = awareness.getStates().get(clientId);
-        if (state && !state.aiCursor) {
-            cursorModule.removeCursor(`ai-agent-${clientId}`);
-        }
-    });
-});
-
-
-// ... (remaining helper functions unchanged, but included for context if needed, though this chunk targets the specific observer block) ...
-
-
-
-// --- HELPER: UI Notifications (Toast) ---
-function showToast(message, isError = false) {
-    const toastEl = document.getElementById('liveToast');
-    const toastBody = document.getElementById('toast-message');
-    const toastHeader = toastEl.querySelector('.toast-header strong');
-
-    toastBody.textContent = message;
-
-    if (isError) {
-        toastHeader.textContent = 'Error';
-        toastHeader.classList.add('text-danger');
-    } else {
-        toastHeader.textContent = 'Notification';
-        toastHeader.classList.remove('text-danger');
-    }
-
-    const toast = new bootstrap.Toast(toastEl);
-    toast.show();
+function deriveAiColor(hex, offset = 35) {
+    if (typeof hex !== "string" || !/^#([0-9a-f]{6})$/i.test(hex)) return "#8b5cf6";
+    const num = parseInt(hex.slice(1), 16);
+    const clamp = (value) => Math.max(0, Math.min(255, value));
+    const r = clamp(((num >> 16) & 0xff) + offset);
+    const g = clamp(((num >> 8) & 0xff) + offset);
+    const b = clamp((num & 0xff) + offset);
+    return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
 }
 
-/**
- * UI EVENT HANDLERS
- */
+function getAliasFromClientId(id) {
+    const absId = Math.abs(Number(id) || 0);
+    const number = (absId % 9000) + 1;
+    return { number, alias: `User ${number}` };
+}
 
-// Load Template
-document.getElementById('btn-template').addEventListener('click', () => {
-    // For demo simplicity, we just overwrite. In a real app we'd ask confirmation.
-    ytext.delete(0, ytext.length);
-    ytext.insert(0, TEMPLATE_TEXT);
-    showToast('Contract template loaded successfully.');
-});
+const historyEntries = [];
+const MAX_HISTORY_ITEMS = 50;
 
-// Apply AI Instruction
-document.getElementById('btn-apply-ai').addEventListener('click', async () => {
-    const instruction = document.getElementById('ai-instruction').value.trim();
-    if (!instruction) return;
+const nameInput = document.getElementById("user-name-input");
+const statusEl = document.getElementById("connection-status");
+const aiStatusEl = document.getElementById("ai-mode-status");
+const roomNameEl = document.getElementById("room-name");
+const shareBtn = document.getElementById("btn-share");
+const templateBtn = document.getElementById("btn-template");
+const uploadInput = document.getElementById("file-upload");
+const applyBtn = document.getElementById("btn-apply-ai");
+const instructionInput = document.getElementById("ai-instruction");
+const historyListEl = document.getElementById("history-list");
+const historyCountEl = document.getElementById("history-count");
+const datasetTableEl = document.getElementById("dataset-table");
+const datasetMetaEl = document.getElementById("dataset-meta");
+const settingsForm = document.getElementById("settings-form");
+const settingsModalEl = document.getElementById("settingsModal");
+const settingsModal = new bootstrap.Modal(settingsModalEl);
 
+const settings = loadSettings();
+hydrateSettingsForm();
+
+const state = {
+    apiKey: settings.apiKey,
+    baseUrl: settings.baseUrl,
+    model: settings.model,
+    isAiTyping: false,
+    ydoc: null,
+    ytext: null,
+    provider: null,
+    awareness: null,
+    quill: null,
+    cursorModule: null,
+    userName: null,
+    userAlias: null,
+    userNumber: null,
+    userColor: null,
+    aiColor: "#8b5cf6"
+};
+
+const roomName = ensureRoomParam();
+roomNameEl.textContent = roomName;
+
+const collab = initCollaboration(roomName);
+state.ydoc = collab.ydoc;
+state.ytext = collab.ytext;
+state.provider = collab.provider;
+state.awareness = collab.awareness;
+
+state.quill = initQuill(state.ytext, state.awareness);
+state.cursorModule = state.quill.getModule("cursors");
+setupAiCursorAwareness();
+
+renderDataset();
+renderHistory();
+attachEventListeners();
+trackHistory();
+updateAiModeBadge();
+
+function loadSettings() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
+        return {
+            apiKey: stored?.apiKey || "",
+            baseUrl: stored?.baseUrl || "https://api.openai.com/v1",
+            model: stored?.model || "gpt-4o-mini"
+        };
+    } catch {
+        return {
+            apiKey: "",
+            baseUrl: "https://api.openai.com/v1",
+            model: "gpt-4o-mini"
+        };
+    }
+}
+
+function persistSettings() {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        apiKey: state.apiKey,
+        baseUrl: state.baseUrl,
+        model: state.model
+    }));
+}
+
+function hydrateSettingsForm() {
+    document.getElementById("api-key").value = settings.apiKey;
+    document.getElementById("base-url").value = settings.baseUrl;
+    document.getElementById("model-name").value = settings.model;
+}
+
+function ensureRoomParam() {
+    const url = new URL(window.location.href);
+    let room = url.searchParams.get("room");
+    if (!room) {
+        room = `parallel-${Math.random().toString(36).slice(2, 8)}`;
+        url.searchParams.set("room", room);
+        window.history.replaceState({}, "", url);
+    }
+    return room;
+}
+
+function initCollaboration(room) {
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText("quill");
+    const provider = new WebrtcProvider(room, ydoc, {
+        signaling: [
+            "wss://signaling.yjs.dev",
+            "wss://y-webrtc-signaling-eu.herokuapp.com",
+            "wss://y-webrtc-signaling-us.herokuapp.com"
+        ]
+    });
+    const awareness = provider.awareness;
+    const meta = ydoc.getMap("meta");
+
+    const userNames = ["Human Editor", "Reviewer", "Counsel", "Manager"];
+    const userColors = ["#2563eb", "#db2777", "#ca8a04", "#16a34a", "#0891b2"];
+    const myName = userNames[Math.floor(Math.random() * userNames.length)];
+    const myColor = userColors[Math.floor(Math.random() * userColors.length)];
+    const aliasInfo = getAliasFromClientId(ydoc.clientID);
+
+    state.userAlias = aliasInfo.alias;
+    state.userNumber = aliasInfo.number;
+    state.userColor = myColor;
+    state.aiColor = deriveAiColor(myColor);
+
+    nameInput.value = myName;
+    awareness.setLocalStateField("user", {
+        name: myName,
+        color: myColor,
+        alias: aliasInfo.alias,
+        number: aliasInfo.number
+    });
+    state.userName = myName;
+    nameInput.addEventListener("input", () => {
+        const nextName = nameInput.value.trim() || "Anonymous";
+        awareness.setLocalStateField("user", {
+            name: nextName,
+            color: myColor,
+            alias: aliasInfo.alias,
+            number: aliasInfo.number
+        });
+        state.userName = nextName;
+        refreshLocalAiCursorLabel();
+    });
+
+    const updateStatus = () => {
+        const peers = awareness.getStates().size;
+        const connected = provider.connected || peers > 1;
+        statusEl.innerHTML = `<span class="ai-${connected ? "active" : "mock"}-indicator"></span>${connected ? "Connected" : "Waiting for peers"}`;
+        statusEl.classList.toggle("text-success", connected);
+        statusEl.classList.toggle("border-success", connected);
+    };
+    provider.on("status", updateStatus);
+    awareness.on("change", updateStatus);
+    updateStatus();
+
+    provider.once("synced", (synced) => {
+        if (!synced) return;
+        if (!meta.get("seeded") && !ytext.length) {
+            ydoc.transact(() => {
+                ytext.delete(0, ytext.length);
+                ytext.insert(0, TEMPLATE_TEXT);
+                meta.set("seeded", true);
+            }, "seed-template");
+        }
+    });
+
+    return { ydoc, ytext, provider, awareness, meta };
+}
+
+function initQuill(ytext, awareness) {
+    const editorContainer = document.getElementById("editor");
+    const quill = new Quill(editorContainer, {
+        modules: {
+            cursors: true,
+            toolbar: [
+                [{ header: [1, 2, false] }],
+                ["bold", "italic", "underline"],
+                [{ list: "ordered" }, { list: "bullet" }],
+                ["clean"]
+            ]
+        },
+        placeholder: "Waiting for contract...",
+        theme: "snow"
+    });
+    new QuillBinding(ytext, quill, awareness);
+    return quill;
+}
+
+function attachEventListeners() {
+    shareBtn.addEventListener("click", copyRoomLink);
+    templateBtn.addEventListener("click", () => {
+        loadTemplate();
+        showToast("Template loaded");
+    });
+    uploadInput.addEventListener("change", handleUpload);
+    applyBtn.addEventListener("click", () => {
+        const text = instructionInput.value.trim();
+        if (!text) {
+            showToast("Enter an instruction first", true);
+            return;
+        }
+        applyInstruction(text);
+    });
+    document.getElementById("btn-save-settings").addEventListener("click", () => {
+        state.apiKey = document.getElementById("api-key").value.trim();
+        state.baseUrl = document.getElementById("base-url").value.trim() || "https://api.openai.com/v1";
+        state.model = document.getElementById("model-name").value.trim() || "gpt-4o-mini";
+        persistSettings();
+        updateAiModeBadge();
+        settingsModal.hide();
+        showToast("Settings saved");
+    });
+}
+
+function copyRoomLink() {
+    const url = window.location.href;
+    if (navigator.share) {
+        navigator.share({ title: "ParallelEdit room", url }).catch(() => {});
+        return;
+    }
+    navigator.clipboard.writeText(url)
+        .then(() => showToast("Room link copied"))
+        .catch(() => showToast("Unable to copy link automatically.", true));
+}
+
+function handleUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    file.text()
+        .then((text) => {
+            replaceDocumentText(text, "upload");
+            showToast(`Loaded ${file.name}`);
+        })
+        .catch((error) => showToast(`Failed to read file: ${error.message}`, true))
+        .finally(() => {
+            event.target.value = "";
+        });
+}
+
+function renderDataset() {
+    datasetTableEl.innerHTML = DATASET.map(
+        (row) => `
+        <tr>
+            <td>${row.title}</td>
+            <td>${row.role}</td>
+            <td>${row.location}</td>
+            <td>${row.comp}</td>
+            <td>${row.updated}</td>
+        </tr>`
+    ).join("");
+    datasetMetaEl.textContent = `${DATASET.length} rows`;
+}
+
+function trackHistory() {
+    state.ytext.observe((event, transaction) => {
+        if (transaction.origin === null) return;
+        const stamp = new Date().toLocaleTimeString();
+        event.changes.delta.forEach((change) => {
+            if (!change.insert && !change.delete) return;
+            const entry = {
+                type: change.insert ? "insert" : "delete",
+                snippet: (change.insert || `${change.delete} characters removed`).toString().slice(0, 120),
+                time: stamp
+            };
+            historyEntries.unshift(entry);
+            if (historyEntries.length > MAX_HISTORY_ITEMS) historyEntries.pop();
+        });
+        renderHistory();
+    });
+}
+
+function renderHistory() {
+    if (!historyEntries.length) {
+        historyListEl.innerHTML = `<div class="text-center text-muted py-4">No edits yet</div>`;
+        historyCountEl.textContent = "0";
+        return;
+    }
+    historyListEl.innerHTML = historyEntries.map(
+        (entry) => `
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="badge text-bg-${entry.type === "insert" ? "success" : "danger"} text-uppercase">${entry.type}</span>
+                <small class="text-muted">${entry.time}</small>
+            </div>
+            <div class="mt-2 small text-truncate">${entry.snippet}</div>
+        </div>`
+    ).join("");
+    historyCountEl.textContent = String(historyEntries.length);
+}
+
+function replaceDocumentText(nextText, origin = "manual") {
+    if (!state.ydoc || !state.ytext) return;
+    state.ydoc.transact(() => {
+        state.ytext.delete(0, state.ytext.length);
+        state.ytext.insert(0, nextText);
+    }, origin);
+}
+
+function loadTemplate() {
+    replaceDocumentText(TEMPLATE_TEXT, "template-load");
+}
+
+function updateAiModeBadge() {
+    if (state.apiKey) {
+        aiStatusEl.innerHTML = '<span class="ai-active-indicator"></span> Live AI Mode';
+    } else {
+        aiStatusEl.innerHTML = '<span class="ai-mock-indicator"></span> Mock AI Mode';
+    }
+}
+
+async function applyInstruction(instruction) {
     if (state.isAiTyping) return;
-    setAiBusy(true);
+    updateAiCursor(null);
+    state.isAiTyping = true;
+    applyBtn.disabled = true;
+    applyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Streaming...';
 
     try {
         if (state.apiKey) {
@@ -267,174 +381,393 @@ document.getElementById('btn-apply-ai').addEventListener('click', async () => {
         } else {
             await runMockAi(instruction);
         }
-    } catch (e) {
-        console.error(e);
-        showToast('AI Error: ' + e.message, true);
+    } catch (error) {
+        console.error(error);
+        showToast(`AI error: ${error.message}`, true);
     } finally {
-        setAiBusy(false);
-        // Leave the cursor at the end position so users can see where it finished
-        // updateAiCursor(null); 
-    }
-});
-
-// Settings Modal
-const settingsModal = new bootstrap.Modal(document.getElementById('settingsModal'));
-document.getElementById('btn-save-settings').addEventListener('click', () => {
-    state.apiKey = document.getElementById('api-key').value.trim();
-    state.baseUrl = document.getElementById('base-url').value.trim();
-    state.model = document.getElementById('model-name').value.trim();
-
-    localStorage.setItem('openai_api_key', state.apiKey);
-    localStorage.setItem('openai_base_url', state.baseUrl);
-
-    updateStatusIndicators();
-    settingsModal.hide();
-});
-
-// Initial UI Sync
-document.getElementById('api-key').value = state.apiKey;
-document.getElementById('base-url').value = state.baseUrl;
-updateStatusIndicators();
-
-function updateStatusIndicators() {
-    const statusEl = document.getElementById('ai-mode-status');
-    const dot = statusEl.querySelector('.ai-mock-indicator');
-
-    if (state.apiKey) {
-        statusEl.innerHTML = '<span class="ai-active-indicator"></span> Live AI Mode';
-        dot.className = 'ai-active-indicator';
-    } else {
-        statusEl.innerHTML = '<span class="ai-mock-indicator"></span> Mock AI Mode';
-        dot.className = 'ai-mock-indicator';
+        state.isAiTyping = false;
+        applyBtn.disabled = false;
+        applyBtn.innerHTML = '<i class="bi bi-stars"></i> Apply Instruction';
     }
 }
 
-function setAiBusy(busy) {
-    state.isAiTyping = busy;
-    const btn = document.getElementById('btn-apply-ai');
-    btn.disabled = busy;
-    btn.innerHTML = busy ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Thinking...' : '<i class="bi bi-stars"></i> Apply Instruction';
-}
-
-/**
- * AI LOGIC (MOCK MODE)
- */
 async function runMockAi(instruction) {
-    const task = instruction.toLowerCase();
-    await new Promise(r => setTimeout(r, 1000));
-
-    let replacement = "";
-    let target = "";
-
-    if (task.includes("salary") || task.includes("compensation")) {
+    const text = instruction.toLowerCase();
+    await wait(800);
+    let target = "END_OF_DOC";
+    let replacement = `\n\n5. REMOTE WORK\nThe Employee may work remotely up to 3 days per week.`;
+    if (text.includes("salary") || text.includes("compensation")) {
         target = "[INSERT_SALARY]";
-        replacement = "$145,000 USD";
-    } else if (task.includes("name") || task.includes("employee")) {
+        replacement = "$145,000";
+    } else if (text.includes("name")) {
         target = "[INSERT_EMPLOYEE_NAME]";
-        replacement = "Jane Doe";
-    } else if (task.includes("start date")) {
+        replacement = "Jamie Rivera";
+    } else if (text.includes("start")) {
         target = "[INSERT_START_DATE]";
         replacement = "October 1st, 2025";
-    } else if (task.includes("company")) {
-        target = "[INSERT_COMPANY_NAME]";
-        replacement = "Acme Corp Intl.";
-    } else {
-        target = "END_OF_DOC";
-        replacement = "\n\n5. REMOTE WORK\nThe Employee shall be entitled to work remotely for up to 3 days per week, subject to manager approval.";
     }
-
-    // --- Conflict Detection ---
-    const currentContent = ytext.toString();
-    const startIndex = (target === "END_OF_DOC") ? currentContent.length : currentContent.indexOf(target);
-    const endIndex = (target === "END_OF_DOC") ? startIndex : startIndex + target.length;
-
-    // Check if user is editing this range
-    if (startIndex !== -1 && isUserEditingRange(startIndex, endIndex)) {
-        const approved = await askForConfirmation();
-        if (!approved) return; // User rejected logic
-    }
-
     await simulateStreamingEdit(target, replacement);
 }
 
-/**
- * AI LOGIC (LIVE MODE)
- */
 async function runLiveAi(instruction) {
-    const currentText = ytext.toString();
+    const currentText = state.ytext.toString();
+    const body = {
+        model: state.model,
+        temperature: 0.4,
+        response_format: {
+            type: "json_schema",
+            json_schema: {
+                name: "contract_edit",
+                schema: {
+                    type: "object",
+                    properties: {
+                        operations: {
+                            type: "array",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    match: { type: "string", description: "Exact text from the contract to replace" },
+                                    replacement: { type: "string", description: "New text to insert" }
+                                },
+                                required: ["match", "replacement"],
+                                additionalProperties: false
+                            }
+                        },
+                        summary: { type: "string" }
+                    },
+                    required: ["operations"],
+                    additionalProperties: false
+                }
+            }
+        },
+        messages: [
+            {
+                role: "system",
+                content: "You are a helpful legal co-author. Return JSON: {operations:[{match, replacement}], summary?}. The match string must be copied from the existing document."
+            },
+            {
+                role: "user",
+                content: `Document:\n${currentText}\n\nInstruction: ${instruction}`
+            }
+        ]
+    };
 
-    // Construct Prompt
-    const messages = [
-        { role: "system", content: "You are a helpful legal assistant. You are editing a contract. Output ONLY the full updated text of the contract. Do not add markdown formatting or conversation." },
-        { role: "user", content: `Current Contract:\n${currentText}\n\nInstruction: ${instruction}\n\nRewrite the contract to apply the instruction.` }
-    ];
-
-    const response = await fetch(`${state.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    const response = await fetch(`${state.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${state.apiKey}`
+            Authorization: `Bearer ${state.apiKey}`
         },
-        body: JSON.stringify({
-            model: state.model,
-            messages: messages,
-            temperature: 0.7
-        })
+        body: JSON.stringify(body)
     });
-
-    if (!response.ok) throw new Error("API Request Failed");
+    if (!response.ok) throw new Error("Request failed");
     const data = await response.json();
-    const newText = data.choices[0].message.content;
-
-    // --- Conflict Detection ---
-    // For live mode, we only check if the USER has a selection (is actively editing something specific).
-    // A more advanced diff-check is possible but computationally expensive to pre-calculate before apply.
-    // Heuristic: If user has a non-collapsed selection (highlighted text), ASK.
-    // Or if the user is typing (last keypress < 2s ago).
-
-    const range = quill.getSelection();
-    if (range && range.length > 0) {
-        // User has highlighted text, assume they are "editing same thing" if AI touches it.
-        // For safety in this demo, we ALWAYS ask if user has content selected.
-        const approved = await askForConfirmation();
-        if (!approved) return;
+    const rawContent = data.choices?.[0]?.message?.content;
+    let operations = [];
+    if (rawContent) {
+        let jsonText = "";
+        if (Array.isArray(rawContent)) {
+            jsonText = rawContent.map((part) => part.text || "").join("");
+        } else if (typeof rawContent === "string") {
+            jsonText = rawContent;
+        }
+        try {
+            const parsed = JSON.parse(jsonText);
+            operations = parsed.operations || [];
+        } catch (error) {
+            console.warn("Failed to parse structured response; falling back to diff.", error);
+        }
     }
 
-    await applySmartDiffV2(currentText, newText);
+    if (operations.length) {
+        const selection = state.quill.getSelection();
+        if (selection && selection.length > 0) {
+            const approved = await askForConfirmation();
+            if (!approved) return;
+        }
+        await applyOperations(operations);
+    } else {
+        const fallbackText = Array.isArray(rawContent)
+            ? rawContent.map((part) => part.text || "").join("")
+            : rawContent;
+        if (fallbackText) {
+            await applySmartDiffV2(currentText, fallbackText);
+        } else {
+            throw new Error("Model returned no usable edits.");
+        }
+    }
 }
-
-// --- Conflict Helpers ---
 
 function isUserEditingRange(startIndex, endIndex) {
-    const range = quill.getSelection();
+    const range = state.quill.getSelection();
     if (!range) return false;
-
-    // Check for overlap: 
-    // (UserStart < TargetEnd) AND (UserEnd > TargetStart)
     const userStart = range.index;
     const userEnd = range.index + range.length;
-
-    // Add a small buffer (e.g. 10 chars) to "proximity"
-    const buffer = 10;
-
-    // Overlap logic
-    return (userStart < endIndex + buffer) && (userEnd > startIndex - buffer);
+    const buffer = 8;
+    return userStart < endIndex + buffer && userEnd > startIndex - buffer;
 }
 
-async function askForConfirmation() {
+async function simulateStreamingEdit(target, textToType) {
+    const docLength = state.ytext.length;
+    let index = 0;
+    let lastIndex = null;
+    if (target === "END_OF_DOC") {
+        index = docLength;
+    } else {
+        const current = state.ytext.toString();
+        index = current.indexOf(target);
+        if (index === -1) {
+            index = docLength;
+            textToType = `\n${textToType}`;
+        } else {
+            updateAiCursor(index, target.length);
+            state.ytext.delete(index, target.length);
+        }
+    }
+    let relPos = Y.createRelativePositionFromTypeIndex(state.ytext, index);
+    for (const char of textToType) {
+        const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
+        if (absPos) {
+            updateAiCursor(absPos.index, 1);
+            state.ytext.insert(absPos.index, char);
+            relPos = Y.createRelativePositionFromTypeIndex(state.ytext, absPos.index + 1);
+            lastIndex = absPos.index + 1;
+        }
+        await wait(25);
+    }
+    if (lastIndex !== null) {
+        updateAiCursor(lastIndex, 0);
+    }
+}
+
+async function applyOperations(operations) {
+    let lastAnchor = null;
+    for (const op of operations) {
+        const match = typeof op.match === "string" ? op.match : op.target || "";
+        const replacement = op.replacement ?? op.content ?? "";
+        if (!match) continue;
+        const current = state.ytext.toString();
+        const idx = current.indexOf(match);
+        if (idx === -1) continue;
+
+        const conflictRangeEnd = idx + match.length;
+        if (isUserEditingRange(idx, conflictRangeEnd)) {
+            const approved = await askForConfirmation();
+            if (!approved) continue;
+        }
+
+        if (match.length) {
+            updateAiCursor(idx, match.length);
+            state.ydoc.transact(() => {
+                state.ytext.delete(idx, match.length);
+            }, "ai-edit");
+        }
+
+        let relPos = Y.createRelativePositionFromTypeIndex(state.ytext, idx);
+        for (const char of replacement) {
+            await wait(25);
+            state.ydoc.transact(() => {
+                const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
+                const insertIndex = absPos ? absPos.index : idx;
+                state.ytext.insert(insertIndex, char);
+                relPos = Y.createRelativePositionFromTypeIndex(state.ytext, insertIndex + 1);
+                updateAiCursor(insertIndex + 1, 0);
+                lastAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, insertIndex + 1);
+            }, "ai-edit");
+        }
+
+        if (!replacement.length) {
+            lastAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, idx);
+        }
+    }
+
+    if (lastAnchor) {
+        updateAiCursor(lastAnchor, 0);
+    } else {
+        updateAiCursor(null);
+    }
+}
+
+async function applySmartDiffV2(oldText, newText) {
+    const changes = diff(oldText, newText);
+    let scanIndex = 0;
+    const ops = [];
+    for (const [action, chunk] of changes) {
+        if (action === 0) {
+            scanIndex += chunk.length;
+            ops.push({ type: "EQ", anchor: Y.createRelativePositionFromTypeIndex(state.ytext, scanIndex) });
+        } else if (action === -1) {
+            scanIndex += chunk.length;
+            ops.push({
+                type: "DEL",
+                endAnchor: Y.createRelativePositionFromTypeIndex(state.ytext, scanIndex)
+            });
+        } else if (action === 1) {
+            ops.push({ type: "INS", content: chunk });
+        }
+    }
+
+    let headAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, 0);
+    let lastEditAnchor = null;
+
+    for (const op of ops) {
+        if (op.type === "EQ") {
+            headAnchor = op.anchor;
+        } else if (op.type === "DEL") {
+            const startPos = Y.createAbsolutePositionFromRelativePosition(headAnchor, state.ydoc);
+            const endPos = Y.createAbsolutePositionFromRelativePosition(op.endAnchor, state.ydoc);
+            if (startPos && endPos) {
+                const deleteSize = endPos.index - startPos.index;
+                if (deleteSize > 0) {
+                    updateAiCursor(headAnchor, deleteSize);
+                    await wait(25);
+                    state.ytext.delete(startPos.index, deleteSize);
+                    lastEditAnchor = headAnchor;
+                }
+            }
+            headAnchor = op.endAnchor;
+        } else if (op.type === "INS") {
+            const startPos = Y.createAbsolutePositionFromRelativePosition(headAnchor, state.ydoc);
+            if (!startPos) continue;
+            let insertionAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, startPos.index);
+            for (const char of op.content) {
+                const abs = Y.createAbsolutePositionFromRelativePosition(insertionAnchor, state.ydoc);
+                if (abs) {
+                    updateAiCursor(abs.index, 1);
+                    state.ytext.insert(abs.index, char);
+                    insertionAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, abs.index + 1);
+                }
+            }
+            lastEditAnchor = insertionAnchor;
+        }
+    }
+    if (lastEditAnchor || headAnchor) {
+        updateAiCursor(lastEditAnchor || headAnchor, 0);
+    } else {
+        updateAiCursor(null);
+    }
+}
+
+function setupAiCursorAwareness() {
+    const awareness = state.awareness;
+    const cursorModule = state.cursorModule;
+    const activeIds = new Set();
+
+    const render = () => {
+        const seen = new Set();
+        awareness.getStates().forEach((entry, clientId) => {
+            if (!entry.aiCursor) return;
+            const cursorId = `ai-agent-${clientId}`;
+            seen.add(cursorId);
+            try {
+                let encoded = entry.aiCursor.relPos;
+                if (!(encoded instanceof Uint8Array)) {
+                    encoded = new Uint8Array(Object.values(encoded));
+                }
+                const relPos = Y.decodeRelativePosition(encoded);
+                const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
+                if (absPos) {
+                    const label =
+                        entry.aiCursor.aiLabel ||
+                        (entry.aiCursor.alias ? `AI ${entry.aiCursor.alias}` : null) ||
+                        (entry.user?.number ? `AI User ${entry.user.number}` : null) ||
+                        (entry.user?.name ? `AI (${entry.user.name})` : "AI");
+                    const color = entry.aiCursor.color || entry.user?.color || "#8b5cf6";
+                    cursorModule.createCursor(cursorId, label, color);
+                    cursorModule.moveCursor(cursorId, { index: absPos.index, length: entry.aiCursor.length || 0 });
+                    cursorModule.toggleFlag(cursorId, true);
+                }
+            } catch (error) {
+                console.warn("Unable to render AI cursor", error);
+            }
+        });
+        activeIds.forEach((id) => {
+            if (!seen.has(id)) {
+                cursorModule.removeCursor(id);
+                activeIds.delete(id);
+            }
+        });
+        seen.forEach((id) => activeIds.add(id));
+    };
+
+    awareness.on("change", ({ removed }) => {
+        render();
+        removed.forEach((clientId) => {
+            const cursorId = `ai-agent-${clientId}`;
+            cursorModule.removeCursor(cursorId);
+            activeIds.delete(cursorId);
+        });
+    });
+    render();
+}
+
+function updateAiCursor(position, length = 0) {
+    if (!state.awareness || !state.ytext) return;
+    if (position === null) {
+        state.awareness.setLocalStateField("aiCursor", null);
+        state.cursorModule?.removeCursor("ai-agent-local");
+        return;
+    }
+    let encoded;
+    if (typeof position === "number") {
+        const relPos = Y.createRelativePositionFromTypeIndex(state.ytext, position);
+        encoded = Y.encodeRelativePosition(relPos);
+    } else {
+        encoded = Y.encodeRelativePosition(position);
+    }
+    const label = getLocalAiLabel();
+    const color = state.aiColor || "#8b5cf6";
+    state.awareness.setLocalStateField("aiCursor", {
+        relPos: encoded,
+        length,
+        aiLabel: label,
+        alias: state.userAlias,
+        number: state.userNumber,
+        color
+    });
+    const abs = typeof position === "number"
+        ? { index: position }
+        : Y.createAbsolutePositionFromRelativePosition(position, state.ydoc);
+    if (abs) {
+        state.cursorModule?.createCursor("ai-agent-local", label, color);
+        state.cursorModule?.moveCursor("ai-agent-local", { index: abs.index, length });
+        state.cursorModule?.toggleFlag("ai-agent-local", true);
+    }
+}
+
+function getLocalAiLabel() {
+    if (state.userNumber) {
+        const base = `AI User ${state.userNumber}`;
+        return state.userName ? `${base} (${state.userName})` : base;
+    }
+    return `AI (${state.userName || "Editor"})`;
+}
+
+function refreshLocalAiCursorLabel() {
+    if (!state.awareness || !state.ydoc) return;
+    const local = state.awareness.getLocalState();
+    if (!local?.aiCursor?.relPos) return;
+    let encoded = local.aiCursor.relPos;
+    if (!(encoded instanceof Uint8Array)) {
+        encoded = new Uint8Array(Object.values(encoded));
+    }
+    const relPos = Y.decodeRelativePosition(encoded);
+    const abs = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
+    if (abs) {
+        updateAiCursor(abs.index, local.aiCursor.length || 0);
+    }
+}
+
+function askForConfirmation() {
     return new Promise((resolve) => {
-        const modalEl = document.getElementById('conflictModal');
+        const modalEl = document.getElementById("conflictModal");
         const modal = new bootstrap.Modal(modalEl);
-
-        const btnAccept = document.getElementById('btn-accept-conflict');
-        const btnReject = document.getElementById('btn-reject-conflict');
-
-        // Clean up listeners from previous runs involved tricky logic, 
-        // simpler approach: one-time handlers
+        const acceptBtn = document.getElementById("btn-accept-conflict");
+        const rejectBtn = document.getElementById("btn-reject-conflict");
 
         const cleanup = () => {
-            btnAccept.removeEventListener('click', onAccept);
-            btnReject.removeEventListener('click', onReject);
+            acceptBtn.removeEventListener("click", onAccept);
+            rejectBtn.removeEventListener("click", onReject);
             modal.hide();
         };
 
@@ -445,237 +778,27 @@ async function askForConfirmation() {
 
         const onReject = () => {
             cleanup();
-            showToast('AI edit cancelled by user.', true);
+            showToast("AI edit cancelled.", true);
             resolve(false);
         };
 
-        btnAccept.addEventListener('click', onAccept);
-        btnReject.addEventListener('click', onReject);
-
+        acceptBtn.addEventListener("click", onAccept);
+        rejectBtn.addEventListener("click", onReject);
         modal.show();
     });
 }
 
-
-/**
- * CORE EDITING FUNCTIONS
- * Refactored to use RelativePositions to prevent cursor jumping/conflicts during concurrent editing.
- */
-
-async function simulateStreamingEdit(target, textToType) {
-    const docLength = ytext.length;
-    let index = 0;
-
-    // 1. Find the starting position (Absolute)
-    if (target === "END_OF_DOC") {
-        index = docLength;
-    } else {
-        const currentContent = ytext.toString();
-        index = currentContent.indexOf(target);
-        if (index === -1) {
-            index = docLength;
-            textToType = "\n" + textToType;
-        } else {
-            // Select and delete placeholder
-            updateAiCursor(index, target.length);
-            await wait(300);
-            ytext.delete(index, target.length);
-        }
-    }
-
-    // 2. Convert to RelativePosition for robust streaming
-    // We anchor to the insertion point.
-    let currentRelPos = Y.createRelativePositionFromTypeIndex(ytext, index);
-
-    // Type the replacement
-    for (let i = 0; i < textToType.length; i++) {
-        // Resolve absolute position right before writing
-        const absPos = Y.createAbsolutePositionFromRelativePosition(currentRelPos, ydoc);
-
-        if (absPos) {
-            const currentIndex = absPos.index;
-            updateAiCursor(currentIndex, 1);
-            ytext.insert(currentIndex, textToType[i]);
-
-            // Move anchor forward by 1 for the next character
-            currentRelPos = Y.createRelativePositionFromTypeIndex(ytext, currentIndex + 1);
-        }
-
-        await wait(20 + Math.random() * 30);
-    }
-}
-
-async function applySmartDiff(oldText, newText) {
-    const changes = diff(oldText, newText);
-    let currentIndex = 0; // This tracks the position in the *current* Yjs document
-
-    for (const [action, chunk] of changes) {
-        if (action === 0) {
-            // EQUAL: Just move cursor/index forward
-            currentIndex += chunk.length;
-        } else if (action === -1) {
-            // DELETE: Delete at current index
-            // We lock the position with a RelativePosition
-            let delRelPos = Y.createRelativePositionFromTypeIndex(ytext, currentIndex);
-
-            updateAiCursor(currentIndex, chunk.length);
-            await wait(50);
-
-            // Resolve again in case it moved due to concurrent edits
-            const absPos = Y.createAbsolutePositionFromRelativePosition(delRelPos, ydoc);
-            if (absPos) {
-                // Ensure we don't try to delete beyond the document length
-                const actualLength = Math.min(chunk.length, ytext.length - absPos.index);
-                if (actualLength > 0) {
-                    ytext.delete(absPos.index, actualLength);
-                }
-            }
-            // Delete does NOT advance currentIndex (content shifted back)
-        } else if (action === 1) {
-            // INSERT
-            let insRelPos = Y.createRelativePositionFromTypeIndex(ytext, currentIndex);
-
-            for (let i = 0; i < chunk.length; i++) {
-                const absPos = Y.createAbsolutePositionFromRelativePosition(insRelPos, ydoc);
-                if (absPos) {
-                    const writeIndex = absPos.index;
-                    updateAiCursor(writeIndex, 1);
-                    ytext.insert(writeIndex, chunk[i]);
-
-                    // Advance our anchor for the next character
-                    insRelPos = Y.createRelativePositionFromTypeIndex(ytext, writeIndex + 1);
-                    // Also advance main counter for next diff chunks
-                    currentIndex++;
-                }
-                if (i % 5 === 0) await wait(10);
-            }
-        }
-    }
-}
-
-// Update MY AI Cursor via Awareness (Ephemeral)
-// STRICT MODE: Only accepts RelativePosition objects.
-function updateAiCursor(position, length = 0) {
-    if (position === null) {
-        awareness.setLocalStateField('aiCursor', null);
-        return;
-    }
-
-    let encodedRelPos;
-
-    // Safety: If someone passes a number, we convert it immediately to a NEW RelativePosition
-    if (typeof position === 'number') {
-        const relPos = Y.createRelativePositionFromTypeIndex(ytext, position);
-        encodedRelPos = Y.encodeRelativePosition(relPos);
-    } else {
-        try {
-            encodedRelPos = Y.encodeRelativePosition(position);
-        } catch (e) {
-            console.warn("Invalid cursor position object", position);
-            return;
-        }
-    }
-
-    // Broadcast my AI's state via Awareness
-    awareness.setLocalStateField('aiCursor', {
-        relPos: encodedRelPos,
-        length: length,
-        name: `AI (${myName})`,
-        color: '#8b5cf6'
-    });
-}
-
 function wait(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function applySmartDiffV2(oldText, newText) {
-    const changes = diff(oldText, newText);
-
-    // Strategy: Pre-Calculate Anchors
-    // We map the linear diff to specific positions in the CURRENT ytext.
-    // By creating RelativePositions *before* we start editing, we ensure
-    // that our target locations shift correctly if the user types *during* the apply process.
-
-    let scanIndex = 0;
-    const ops = [];
-
-    // 1. Plan Phase: Create Anchors for all operations
-    for (const [action, chunk] of changes) {
-        if (action === 0) { // EQUAL
-            // We need to keep `chunk.length` characters.
-            scanIndex += chunk.length;
-            ops.push({ type: 'EQ', anchor: Y.createRelativePositionFromTypeIndex(ytext, scanIndex) });
-        } else if (action === -1) { // DELETE
-            // We need to delete `chunk.length' characters starting from current position.
-            // The "End" of the deletion is at `scanIndex + length`.
-            scanIndex += chunk.length;
-            ops.push({ type: 'DEL', startAnchor: null, endAnchor: Y.createRelativePositionFromTypeIndex(ytext, scanIndex), length: chunk.length });
-        } else if (action === 1) { // INSERT
-            // Insert happens AT current position. Index doesn't move relative to old text.
-            ops.push({ type: 'INS', content: chunk });
-        }
-    }
-
-    // 2. Execution Phase: Apply edits using the Anchors
-    // We maintain a "Head" anchor tracking where we are.
-    let headAnchor = Y.createRelativePositionFromTypeIndex(ytext, 0);
-    // NEW: Track the location of the *last performed edit* so we can park the cursor there.
-    let lastEditAnchor = null;
-
-    for (const op of ops) {
-        if (op.type === 'EQ') {
-            // Just move head to the new anchor
-            headAnchor = op.anchor;
-        } else if (op.type === 'DEL') {
-            // Delete from Head to EndAnchor
-            const startPos = Y.createAbsolutePositionFromRelativePosition(headAnchor, ydoc);
-            const endPos = Y.createAbsolutePositionFromRelativePosition(op.endAnchor, ydoc);
-
-            if (startPos && endPos) {
-                const deleteSize = endPos.index - startPos.index;
-                // Safety check: ensure we are deleting forward and reasonable amount
-                if (deleteSize > 0 && deleteSize <= 1000) {
-                    // Update cursor to deletion point
-                    updateAiCursor(headAnchor, deleteSize);
-                    await wait(50);
-                    ytext.delete(startPos.index, deleteSize);
-
-                    // Mark this as an edit location
-                    lastEditAnchor = headAnchor;
-                }
-            }
-            headAnchor = op.endAnchor;
-
-        } else if (op.type === 'INS') {
-            // Insert at Head
-            const startPos = Y.createAbsolutePositionFromRelativePosition(headAnchor, ydoc);
-            if (startPos) {
-                const insertIndex = startPos.index;
-                // Walking Anchor logic for the insertion itself
-                let typingAnchor = Y.createRelativePositionFromTypeIndex(ytext, insertIndex);
-
-                for (let i = 0; i < op.content.length; i++) {
-                    const typePos = Y.createAbsolutePositionFromRelativePosition(typingAnchor, ydoc);
-                    if (typePos) {
-                        updateAiCursor(typingAnchor, 0);
-                        ytext.insert(typePos.index, op.content[i]);
-                    }
-                    if (i % 5 === 0) await wait(10);
-                }
-                // Mark this as an edit location (at the end of the insertion)
-                lastEditAnchor = typingAnchor;
-            }
-        }
-    }
-
-    // Park cursor at the LAST EDIT position if one exists, otherwise leave it (or set to null)
-    if (lastEditAnchor) {
-        updateAiCursor(lastEditAnchor, 0);
-        console.log("Cursor parked at last edit.");
-    } else {
-        // If no edits occurred (just reading?), maybe hide it or park at end.
-        // But usually there's an edit. If equal, park at end.
-        updateAiCursor(headAnchor, 0);
-    }
+function showToast(message, isError = false) {
+    const toastEl = document.getElementById("liveToast");
+    const toastBody = document.getElementById("toast-message");
+    const toastHeader = toastEl.querySelector(".toast-header strong");
+    toastBody.textContent = message;
+    toastHeader.textContent = isError ? "Error" : "Notification";
+    toastHeader.classList.toggle("text-danger", isError);
+    const toast = new bootstrap.Toast(toastEl);
+    toast.show();
 }
