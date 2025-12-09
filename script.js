@@ -1,5 +1,6 @@
 import * as Y from "https://esm.sh/yjs";
 import { WebrtcProvider } from "https://esm.sh/y-webrtc";
+import { WebsocketProvider } from "https://esm.sh/y-websocket";
 import { QuillBinding } from "https://esm.sh/y-quill";
 import Quill from "https://esm.sh/quill@1.3.6";
 import QuillCursors from "https://esm.sh/quill-cursors@3.0.0";
@@ -13,6 +14,7 @@ const DEFAULT_SIGNALING = [
     "wss://y-webrtc-signaling-eu.herokuapp.com",
     "wss://y-webrtc-signaling-us.herokuapp.com"
 ];
+const DEFAULT_WEBSOCKET_URL = "wss://demos.yjs.dev";
 
 const TEMPLATE_TEXT = `
 EMPLOYMENT AGREEMENT
@@ -104,10 +106,12 @@ const state = {
     baseUrl: settings.baseUrl,
     model: settings.model,
     signaling: settings.signaling.slice(),
+    websocketUrl: settings.websocketUrl,
     isAiTyping: false,
     ydoc: null,
     ytext: null,
-    provider: null,
+    webrtcProvider: null,
+    websocketProvider: null,
     awareness: null,
     quill: null,
     cursorModule: null,
@@ -124,7 +128,8 @@ roomNameEl.textContent = roomName;
 const collab = initCollaboration(roomName);
 state.ydoc = collab.ydoc;
 state.ytext = collab.ytext;
-state.provider = collab.provider;
+state.webrtcProvider = collab.webrtcProvider;
+state.websocketProvider = collab.websocketProvider;
 state.awareness = collab.awareness;
 
 state.quill = initQuill(state.ytext, state.awareness);
@@ -144,14 +149,18 @@ function loadSettings() {
             apiKey: stored?.apiKey || "",
             baseUrl: stored?.baseUrl || "https://api.openai.com/v1",
             model: stored?.model || "gpt-4o-mini",
-            signaling: normalizeSignalingList(stored?.signaling)
+            signaling: normalizeSignalingList(stored?.signaling),
+            websocketUrl: typeof stored?.websocketUrl === "string" && stored.websocketUrl.trim()
+                ? stored.websocketUrl.trim()
+                : DEFAULT_WEBSOCKET_URL
         };
     } catch {
         return {
             apiKey: "",
             baseUrl: "https://api.openai.com/v1",
             model: "gpt-4o-mini",
-            signaling: [...DEFAULT_SIGNALING]
+            signaling: [...DEFAULT_SIGNALING],
+            websocketUrl: DEFAULT_WEBSOCKET_URL
         };
     }
 }
@@ -161,7 +170,8 @@ function persistSettings() {
         apiKey: state.apiKey,
         baseUrl: state.baseUrl,
         model: state.model,
-        signaling: state.signaling
+        signaling: state.signaling,
+        websocketUrl: state.websocketUrl
     }));
 }
 
@@ -172,6 +182,10 @@ function hydrateSettingsForm() {
     const signalingField = document.getElementById("signaling-servers");
     if (signalingField) {
         signalingField.value = (settings.signaling || DEFAULT_SIGNALING).join("\n");
+    }
+    const websocketField = document.getElementById("websocket-url");
+    if (websocketField) {
+        websocketField.value = settings.websocketUrl || DEFAULT_WEBSOCKET_URL;
     }
 }
 
@@ -189,11 +203,11 @@ function ensureRoomParam() {
 function initCollaboration(room) {
     const ydoc = new Y.Doc();
     const ytext = ydoc.getText("quill");
-    const signaling = (state.signaling && state.signaling.length) ? state.signaling : DEFAULT_SIGNALING;
-    const provider = new WebrtcProvider(room, ydoc, {
-        signaling
-    });
-    const awareness = provider.awareness;
+    const signaling = state.signaling?.length ? state.signaling : DEFAULT_SIGNALING;
+    const webrtcProvider = new WebrtcProvider(room, ydoc, { signaling });
+    const awareness = webrtcProvider.awareness;
+    const websocketUrl = state.websocketUrl || DEFAULT_WEBSOCKET_URL;
+    const websocketProvider = new WebsocketProvider(websocketUrl, room, ydoc, { awareness });
     const meta = ydoc.getMap("meta");
 
     const userNames = ["Human Editor", "Reviewer", "Counsel", "Manager"];
@@ -227,22 +241,54 @@ function initCollaboration(room) {
         refreshLocalAiCursorLabel();
     });
 
+    let rtcConnected = false;
+    let wsConnected = false;
+
+    const transportLabel = () => {
+        if (rtcConnected) return "WebRTC";
+        if (wsConnected) return "WebSocket";
+        return "Offline";
+    };
+
     const updateStatus = () => {
-        const peers = awareness.getStates().size;
-        const connected = provider.connected || peers > 1;
-        statusEl.innerHTML = `<span class="ai-${connected ? "active" : "mock"}-indicator"></span>${connected ? "Connected" : "Waiting for peers"}`;
+        const peers = Math.max(awareness.getStates().size, 1);
+        const connected = rtcConnected || wsConnected;
+        statusEl.innerHTML = `<span class="ai-${connected ? "active" : "mock"}-indicator"></span>${connected ? `Connected via ${transportLabel()}` : "Waiting for peers"}`;
         statusEl.classList.toggle("text-success", connected);
         statusEl.classList.toggle("border-success", connected);
+        statusEl.classList.toggle("text-warning", !connected);
         if (collaboratorCountEl) {
-            collaboratorCountEl.textContent = String(Math.max(peers, 1));
+            collaboratorCountEl.textContent = String(peers);
         }
     };
-    provider.on("status", updateStatus);
+
+    webrtcProvider.on("status", (event) => {
+        rtcConnected = Boolean(event.connected);
+        if (!rtcConnected && event.status === "disconnected") {
+            console.warn("WebRTC disconnected from signaling servers", event);
+        }
+        updateStatus();
+    });
+
+    websocketProvider.on("status", (event) => {
+        wsConnected = event.status === "connected";
+        if (!wsConnected && event.status === "disconnected") {
+            console.warn("WebSocket provider disconnected", event);
+        }
+        updateStatus();
+    });
+
+    websocketProvider.on("connection-error", (event) => {
+        wsConnected = false;
+        console.error("WebSocket provider connection error", event);
+        showToast("WebSocket relay unreachable. Verify the URL in Settings.", true);
+        updateStatus();
+    });
+
     awareness.on("change", updateStatus);
     updateStatus();
 
-    provider.once("synced", (synced) => {
-        if (!synced) return;
+    const maybeSeed = () => {
         if (!meta.get("seeded") && !ytext.length) {
             ydoc.transact(() => {
                 ytext.delete(0, ytext.length);
@@ -250,9 +296,12 @@ function initCollaboration(room) {
                 meta.set("seeded", true);
             }, "seed-template");
         }
-    });
+    };
 
-    return { ydoc, ytext, provider, awareness, meta };
+    webrtcProvider.once("synced", (synced) => synced && maybeSeed());
+    websocketProvider.once("sync", (isSynced) => isSynced !== false && maybeSeed());
+
+    return { ydoc, ytext, webrtcProvider, websocketProvider, awareness, meta };
 }
 
 function initQuill(ytext, awareness) {
@@ -297,16 +346,23 @@ function attachEventListeners() {
         const nextSignaling = normalizeSignalingList(rawSignaling);
         const prevSignature = (state.signaling || []).join("|");
         const nextSignature = nextSignaling.join("|");
+        const websocketField = document.getElementById("websocket-url");
+        const nextWebsocket = websocketField?.value.trim() || DEFAULT_WEBSOCKET_URL;
+        const websocketChanged = (state.websocketUrl || DEFAULT_WEBSOCKET_URL) !== nextWebsocket;
+        state.websocketUrl = nextWebsocket;
         state.signaling = nextSignaling;
         settings.apiKey = state.apiKey;
         settings.baseUrl = state.baseUrl;
         settings.model = state.model;
         settings.signaling = nextSignaling.slice();
+        settings.websocketUrl = nextWebsocket;
         persistSettings();
         updateAiModeBadge();
         settingsModal.hide();
         const message = prevSignature !== nextSignature
             ? "Settings saved. Reload the tab to reconnect using the new signaling servers."
+            : websocketChanged
+            ? "Settings saved. Reload to reconnect using the new WebSocket relay."
             : "Settings saved";
         showToast(message);
     });
