@@ -153,7 +153,7 @@ function loadSettings() {
     } catch {
         return {
             apiKey: "",
-            baseUrl: "https://api.openai.com/v1",
+            baseUrl: "https://llmfoundry.straive.com/openai/v1",
             model: "gpt-4o-mini",
             signaling: [...DEFAULT_SIGNALING]
         };
@@ -312,7 +312,7 @@ function attachEventListeners() {
     });
     document.getElementById("btn-save-settings").addEventListener("click", () => {
         state.apiKey = document.getElementById("api-key").value.trim();
-        state.baseUrl = document.getElementById("base-url").value.trim() || "https://api.openai.com/v1";
+        state.baseUrl = document.getElementById("base-url").value.trim() || "https://llmfoundry.straive.com/openai/v1";
         state.model = document.getElementById("model-name").value.trim() || "gpt-4o-mini";
         const rawSignaling = document.getElementById("signaling-servers")?.value || "";
         const nextSignaling = normalizeSignalingList(rawSignaling);
