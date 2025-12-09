@@ -8,6 +8,12 @@ import diff from "https://esm.sh/fast-diff";
 Quill.register("modules/cursors", QuillCursors);
 
 const SETTINGS_KEY = "parallel_edit_settings";
+const DEFAULT_SIGNALING = [
+    "wss://signaling.yjs.dev",
+    "wss://y-webrtc-signaling-eu.herokuapp.com",
+    "wss://y-webrtc-signaling-us.herokuapp.com"
+];
+
 const TEMPLATE_TEXT = `
 EMPLOYMENT AGREEMENT
 
@@ -56,6 +62,19 @@ function getAliasFromClientId(id) {
     return { number, alias: `User ${number}` };
 }
 
+function normalizeSignalingList(value) {
+    let list = [];
+    if (Array.isArray(value)) {
+        list = value;
+    } else if (typeof value === "string") {
+        list = value.split(/[\n,]+/);
+    }
+    list = list
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    return list.length ? list : [...DEFAULT_SIGNALING];
+}
+
 const historyEntries = [];
 const MAX_HISTORY_ITEMS = 50;
 
@@ -63,6 +82,7 @@ const nameInput = document.getElementById("user-name-input");
 const statusEl = document.getElementById("connection-status");
 const aiStatusEl = document.getElementById("ai-mode-status");
 const roomNameEl = document.getElementById("room-name");
+const collaboratorCountEl = document.getElementById("collaborator-count");
 const shareBtn = document.getElementById("btn-share");
 const templateBtn = document.getElementById("btn-template");
 const uploadInput = document.getElementById("file-upload");
@@ -83,6 +103,7 @@ const state = {
     apiKey: settings.apiKey,
     baseUrl: settings.baseUrl,
     model: settings.model,
+    signaling: settings.signaling.slice(),
     isAiTyping: false,
     ydoc: null,
     ytext: null,
@@ -122,13 +143,15 @@ function loadSettings() {
         return {
             apiKey: stored?.apiKey || "",
             baseUrl: stored?.baseUrl || "https://api.openai.com/v1",
-            model: stored?.model || "gpt-4o-mini"
+            model: stored?.model || "gpt-4o-mini",
+            signaling: normalizeSignalingList(stored?.signaling)
         };
     } catch {
         return {
             apiKey: "",
             baseUrl: "https://api.openai.com/v1",
-            model: "gpt-4o-mini"
+            model: "gpt-4o-mini",
+            signaling: [...DEFAULT_SIGNALING]
         };
     }
 }
@@ -137,7 +160,8 @@ function persistSettings() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
         apiKey: state.apiKey,
         baseUrl: state.baseUrl,
-        model: state.model
+        model: state.model,
+        signaling: state.signaling
     }));
 }
 
@@ -145,6 +169,10 @@ function hydrateSettingsForm() {
     document.getElementById("api-key").value = settings.apiKey;
     document.getElementById("base-url").value = settings.baseUrl;
     document.getElementById("model-name").value = settings.model;
+    const signalingField = document.getElementById("signaling-servers");
+    if (signalingField) {
+        signalingField.value = (settings.signaling || DEFAULT_SIGNALING).join("\n");
+    }
 }
 
 function ensureRoomParam() {
@@ -161,12 +189,9 @@ function ensureRoomParam() {
 function initCollaboration(room) {
     const ydoc = new Y.Doc();
     const ytext = ydoc.getText("quill");
+    const signaling = (state.signaling && state.signaling.length) ? state.signaling : DEFAULT_SIGNALING;
     const provider = new WebrtcProvider(room, ydoc, {
-        signaling: [
-            "wss://signaling.yjs.dev",
-            "wss://y-webrtc-signaling-eu.herokuapp.com",
-            "wss://y-webrtc-signaling-us.herokuapp.com"
-        ]
+        signaling
     });
     const awareness = provider.awareness;
     const meta = ydoc.getMap("meta");
@@ -208,6 +233,9 @@ function initCollaboration(room) {
         statusEl.innerHTML = `<span class="ai-${connected ? "active" : "mock"}-indicator"></span>${connected ? "Connected" : "Waiting for peers"}`;
         statusEl.classList.toggle("text-success", connected);
         statusEl.classList.toggle("border-success", connected);
+        if (collaboratorCountEl) {
+            collaboratorCountEl.textContent = String(Math.max(peers, 1));
+        }
     };
     provider.on("status", updateStatus);
     awareness.on("change", updateStatus);
@@ -265,10 +293,22 @@ function attachEventListeners() {
         state.apiKey = document.getElementById("api-key").value.trim();
         state.baseUrl = document.getElementById("base-url").value.trim() || "https://api.openai.com/v1";
         state.model = document.getElementById("model-name").value.trim() || "gpt-4o-mini";
+        const rawSignaling = document.getElementById("signaling-servers")?.value || "";
+        const nextSignaling = normalizeSignalingList(rawSignaling);
+        const prevSignature = (state.signaling || []).join("|");
+        const nextSignature = nextSignaling.join("|");
+        state.signaling = nextSignaling;
+        settings.apiKey = state.apiKey;
+        settings.baseUrl = state.baseUrl;
+        settings.model = state.model;
+        settings.signaling = nextSignaling.slice();
         persistSettings();
         updateAiModeBadge();
         settingsModal.hide();
-        showToast("Settings saved");
+        const message = prevSignature !== nextSignature
+            ? "Settings saved. Reload the tab to reconnect using the new signaling servers."
+            : "Settings saved";
+        showToast(message);
     });
 }
 

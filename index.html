@@ -46,6 +46,10 @@
                     <span class="ai-mock-indicator"></span> Mock AI Mode
                 </div>
                 <div class="status-badge">
+                    <i class="bi bi-people me-1"></i>
+                    <span id="collaborator-count">1</span> online
+                </div>
+                <div class="status-badge">
                     <i class="bi bi-hash me-1"></i>
                     <span id="room-name">room</span>
                 </div>
@@ -174,6 +178,14 @@
                         <div class="mb-3">
                             <label class="form-label">Model Name</label>
                             <input type="text" id="model-name" class="form-control" placeholder="gpt-4" value="gpt-4">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">WebRTC Signaling Servers</label>
+                            <textarea id="signaling-servers" class="form-control" rows="3"
+                                placeholder="One wss:// URL per line"></textarea>
+                            <div class="form-text">
+                                Use your own relays if the default Yjs servers are blocked on your network.
+                            </div>
                         </div>
                     </form>
                 </div>
