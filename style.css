@@ -10,12 +10,17 @@
     --toolbar-height: 60px;
 }
 
+html,
 body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    /* Stops whole page scroll */
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-primary);
-    min-height: 100vh;
-    overflow-x: hidden;
 }
 
 .premium-shadow {
@@ -30,8 +35,9 @@ body {
 .app-container {
     display: flex;
     flex-direction: column;
-    min-height: 70vh;
-    border-bottom: 1px solid var(--border-color);
+    height: 100%;
+    /* Full viewport height */
+    width: 100%;
 }
 
 .top-bar {
@@ -43,12 +49,22 @@ body {
     justify-content: space-between;
     padding: 0 24px;
     z-index: 10;
+    flex-shrink: 0;
+    /* Header calls static */
+}
+
+.demo-bar {
+    flex-shrink: 0;
+    background-color: var(--bg-color);
 }
 
 .main-content {
     display: flex;
     flex: 1;
+    /* Grow to fill remaining space */
     overflow: hidden;
+    /* Important: prevents parent scroll */
+    position: relative;
 }
 
 .editor-container {
@@ -56,8 +72,9 @@ body {
     background-color: var(--surface-color);
     display: flex;
     flex-direction: column;
-    position: relative;
     overflow: hidden;
+    /* Contain children */
+    position: relative;
 }
 
 .sidebar {
@@ -67,17 +84,30 @@ body {
     display: flex;
     flex-direction: column;
     z-index: 5;
-    transition: transform 0.3s ease;
+    flex-shrink: 0;
+    height: 100%;
+    /* Explicit height */
+    overflow: hidden;
 }
 
-/* Quill Overrides */
+.sidebar-section {
+    /* For sections that shouldn't scroll */
+    flex-shrink: 0;
+}
+
+#agents-container {
+    overflow-y: auto;
+    /* Active agents scroll */
+    flex: 1;
+}
+
+/* Quill Setup for Internal Scroll */
 #editor {
     flex: 1;
-    border: none !important;
-    font-family: 'Merriweather', serif;
-    /* Legal document feel */
-    font-size: 16px;
-    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: none;
 }
 
 .ql-toolbar.ql-snow {
@@ -85,23 +115,35 @@ body {
     border-bottom: 1px solid var(--border-color) !important;
     background-color: var(--bg-color);
     padding: 12px !important;
+    flex-shrink: 0;
 }
 
 .ql-container.ql-snow {
     border: none !important;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    /* Important */
+    height: 100%;
 }
 
 .ql-editor {
+    flex: 1;
+    overflow-y: auto;
+    /* The actual scrollable area */
     padding: 40px 60px;
-    max-width: 900px;
+    max-width: 1400px;
+    /* Increased width even more */
+    width: 100%;
     margin: 0 auto;
     background-color: white;
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.02);
-    min-height: 100%;
+    cursor: text;
+    /* Ensure cursor shows */
 }
 
 /* Remote Cursor - AI */
-/* Enhance z-index to ensure cursors float above text */
 .ql-cursor {
     z-index: 1000 !important;
 }
@@ -113,8 +155,6 @@ body {
     padding: 2px 4px;
     border-radius: 4px;
 }
-
-/* Reference to our specific AI cursor hook if needed, mostly handled by quill-cursors handles */
 
 /* AI Panel */
 .ai-panel-header {
@@ -235,21 +275,24 @@ body {
     transition: transform 0.2s, box-shadow 0.2s;
     border: 1px solid transparent;
 }
+
 .demo-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
     border-color: var(--primary-color);
 }
+
 /* Agent Logs */
 .agent-log-container {
     scrollbar-width: thin;
     scrollbar-color: #4b5563 #1f2937;
 }
+
 .agent-log-container::-webkit-scrollbar {
     width: 6px;
 }
+
 .agent-log-container::-webkit-scrollbar-thumb {
     background-color: #4b5563;
     border-radius: 3px;
 }
-

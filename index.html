@@ -18,7 +18,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Merriweather:wght@300;400;700&display=swap"
         rel="stylesheet">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=5">
 </head>
 
 <body>
@@ -73,6 +73,16 @@
             </div>
         </header>
 
+        <!-- Demo Docs Top Bar -->
+        <div class="demo-bar bg-body-tertiary border-bottom px-4 py-2 d-flex align-items-center gap-3 overflow-x-auto"
+            style="white-space: nowrap; min-height: 80px;">
+            <h6 class="fw-bold mb-0 text-uppercase text-secondary small me-2 flex-shrink-0"><i
+                    class="bi bi-collection-play me-2 text-primary"></i>Demo Docs</h6>
+            <div id="demo-docs-list" class="d-flex align-items-center gap-3 flex-grow-1">
+                <!-- Docs will be rendered here horizontally -->
+            </div>
+        </div>
+
         <!-- Main Content Area -->
         <div class="main-content">
             <!-- Editor Section -->
@@ -82,53 +92,40 @@
 
             <!-- AI Sidebar -->
             <aside class="sidebar premium-shadow d-flex flex-column h-100">
-                <!-- 1. Demo Documents List -->
-                <div class="sidebar-section border-bottom p-3 bg-body-tertiary">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="fw-bold mb-0 small text-uppercase text-secondary"><i
-                                class="bi bi-collection-play me-2 text-primary"></i>Demo Docs</h6>
-                    </div>
-                    <div id="demo-docs-list" class="d-flex flex-column gap-2">
-                        <div class="text-center py-3">
-                            <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 2. Actions / Prompts for Selected Doc -->
+                <!-- 2. Actions / Prompts for Selected Doc (Now Top Section of Sidebar) -->
                 <div id="demo-actions-container" class="sidebar-section border-bottom p-3 bg-body-tertiary"
-                    style="min-height: 120px;">
+                    style="min-height: 120px; flex-shrink: 0;">
                     <div class="text-center text-muted small py-3">Select a document above...</div>
                 </div>
 
-                <!-- 3. Live Agents Activity -->
-                <div class="sidebar-section d-flex flex-column flex-grow-1 overflow-hidden bg-white">
-                    <div
-                        class="p-3 border-bottom d-flex justify-content-between align-items-center bg-white sticky-top">
-                        <h6 class="fw-bold mb-0 small text-uppercase text-secondary"><i
-                                class="bi bi-activity me-2 text-success"></i>Live Agents</h6>
-                        <span class="badge bg-secondary rounded-pill" id="agent-count">0</span>
-                    </div>
-                    <div id="agents-container" class="p-3 flex-grow-1 overflow-y-auto" style="min-height: 200px;">
-                        <!-- Agent items will be injected here -->
-                        <div class="text-center text-muted mt-4 small">
-                            <i class="bi bi-robot fs-3 d-block mb-2 opacity-50"></i>
-                            Waiting for task...
-                        </div>
-                    </div>
 
-                    <!-- Manual Input Footer -->
-                    <div class="p-3 border-top bg-white mt-auto">
-                        <label for="ai-instruction"
-                            class="form-label text-xs fw-bold text-uppercase text-secondary mb-1">Manual
-                            Override</label>
-                        <div class="input-group">
-                            <input type="text" id="ai-instruction" class="form-control form-control-sm"
-                                placeholder="Type instruction...">
-                            <button class="btn btn-primary btn-sm" id="btn-apply-ai">
-                                <i class="bi bi-stars"></i>
-                            </button>
-                        </div>
+                <!-- 3. Live Agents Header -->
+                <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-white">
+                    <h6 class="fw-bold mb-0 small text-uppercase text-secondary"><i
+                            class="bi bi-activity me-2 text-success"></i>Live Agents</h6>
+                    <span class="badge bg-secondary rounded-pill" id="agent-count">0</span>
+                </div>
+
+                <!-- 4. Agents List (Scrollable) -->
+                <div id="agents-container" class="p-3 flex-grow-1 overflow-y-auto bg-white" style="min-height: 0;">
+                    <!-- Agent items will be injected here -->
+                    <div class="text-center text-muted mt-4 small">
+                        <i class="bi bi-robot fs-3 d-block mb-2 opacity-50"></i>
+                        Waiting for task...
+                    </div>
+                </div>
+
+                <!-- 5. Manual Input Footer (Fixed Bottom) -->
+                <div class="p-3 border-top bg-white" style="z-index: 10;">
+                    <label for="ai-instruction"
+                        class="form-label text-xs fw-bold text-uppercase text-secondary mb-1">Manual Override (AI
+                        Manager)</label>
+                    <div class="d-flex flex-column gap-2">
+                        <textarea id="ai-instruction" class="form-control form-control-sm" rows="4"
+                            placeholder="Type detailed instructions here... (e.g., 'Review section 5 and add a clause about remote work')"></textarea>
+                        <button class="btn btn-primary w-100 py-2 fw-bold" id="btn-apply-ai">
+                            <i class="bi bi-stars me-2"></i>Apply Instruction
+                        </button>
                     </div>
                 </div>
             </aside>

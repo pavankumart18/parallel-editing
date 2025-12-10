@@ -134,8 +134,10 @@ function renderDemoCards() {
 
     DOCUMENTS.forEach(doc => {
         const card = document.createElement("div");
-        card.className = `card shadow-sm mb-2 demo-card ${state.selectedDocId === doc.id ? 'border-primary bg-primary bg-opacity-10' : ''}`;
+        card.className = `card shadow-sm demo-card flex-shrink-0 ${state.selectedDocId === doc.id ? 'border-primary bg-primary bg-opacity-10' : ''}`;
         card.style.cursor = "pointer";
+        card.style.minWidth = "260px";
+        card.style.maxWidth = "300px";
         card.innerHTML = `
             <div class="card-body p-2 d-flex align-items-center gap-2">
                 <div class="rounded-circle bg-white p-2 text-primary border">
