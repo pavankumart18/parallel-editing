@@ -4,6 +4,8 @@ import { QuillBinding } from "y-quill";
 import Quill from "quill";
 import QuillCursors from "quill-cursors";
 import diff from "fast-diff";
+import { DOCUMENTS } from "./documents.js";
+import { AgentManager } from "./agent-manager.js";
 
 Quill.register("modules/cursors", QuillCursors);
 
@@ -13,40 +15,11 @@ const DEFAULT_SIGNALING = [
     "wss://y-webrtc-signaling-eu.herokuapp.com",
     "wss://y-webrtc-signaling-us.herokuapp.com",
     "wss://signaling-server-2s0k.onrender.com",
+    "wss://y-webrtc-signaling-us.herokuapp.com",
     "wss://y-webrtc.fly.dev"
 ];
 
-const TEMPLATE_TEXT = `
-EMPLOYMENT AGREEMENT
-
-This Employment Agreement (the "Agreement") is made and entered into as of [INSERT_START_DATE], by and between [INSERT_COMPANY_NAME] (the "Company") and [INSERT_EMPLOYEE_NAME] (the "Employee").
-
-1. POSITION AND DUTIES
-The Company agrees to employ the Employee as a [INSERT_JOB_TITLE]. The Employee accepts this employment and agrees to devote their full working time and attention to the performance of their duties.
-
-2. COMPENSATION
-(a) Base Salary. The Company shall pay the Employee a base salary of [INSERT_SALARY] per year, payable in accordance with the Company's standard payroll schedule.
-(b) Benefits. The Employee shall be eligible to participate in the Company's standard benefit plans.
-
-3. AT-WILL EMPLOYMENT
-Employment with the Company is for no specific period of time. Your employment with the Company will be "at will," meaning that either you or the Company may terminate your employment at any time and for any reason, with or without cause.
-
-4. CONFIDENTIALITY
-The Employee agrees not to disclose any of the Company's proprietary information or trade secrets to any third party during or after their employment.
-
-__________________________
-Employee Signature
-
-__________________________
-Company Representative
-`.trim();
-
-const DATASET = [
-    { title: "Staff SWE Offer", role: "Staff SWE", location: "Austin, USA", comp: "$185k + 15%", updated: "2025-11-02" },
-    { title: "Principal PM Offer", role: "Principal PM", location: "Remote (USA)", comp: "$205k + 20%", updated: "2025-10-15" },
-    { title: "MSA · Acme Robotics", role: "MSA", location: "Global", comp: "Retainer $45k/qtr", updated: "2025-09-08" },
-    { title: "Contractor NDA", role: "NDA", location: "EU / USA", comp: "N/A", updated: "2025-08-21" }
-];
+const TEMPLATE_TEXT = DOCUMENTS[0].content; // Default to first doc
 
 function deriveAiColor(hex, offset = 35) {
     if (typeof hex !== "string" || !/^#([0-9a-f]{6})$/i.test(hex)) return "#8b5cf6";
@@ -77,8 +50,7 @@ function normalizeSignalingList(value) {
     return list.length ? list : [...DEFAULT_SIGNALING];
 }
 
-const historyEntries = [];
-const MAX_HISTORY_ITEMS = 50;
+// History handling removed
 
 const nameInput = document.getElementById("user-name-input");
 const statusEl = document.getElementById("connection-status");
@@ -90,10 +62,10 @@ const templateBtn = document.getElementById("btn-template");
 const uploadInput = document.getElementById("file-upload");
 const applyBtn = document.getElementById("btn-apply-ai");
 const instructionInput = document.getElementById("ai-instruction");
-const historyListEl = document.getElementById("history-list");
-const historyCountEl = document.getElementById("history-count");
-const datasetTableEl = document.getElementById("dataset-table");
-const datasetMetaEl = document.getElementById("dataset-meta");
+// History UI elements removed
+
+// const datasetTableEl = document.getElementById("dataset-table"); // Removed? UI changed but elements might exist
+// const datasetMetaEl = document.getElementById("dataset-meta");
 const settingsForm = document.getElementById("settings-form");
 const settingsModalEl = document.getElementById("settingsModal");
 const settingsModal = new bootstrap.Modal(settingsModalEl);
@@ -107,7 +79,9 @@ const state = {
     model: settings.model,
     signaling: settings.signaling.slice(),
 
-    isAiTyping: false,
+    isAiTyping: false, // Global manual lock
+    activeAgents: new Set(), // IDs of running agents
+
     ydoc: null,
     ytext: null,
     webrtcProvider: null,
@@ -118,7 +92,17 @@ const state = {
     userAlias: null,
     userNumber: null,
     userColor: null,
-    aiColor: "#8b5cf6"
+    aiColor: "#8b5cf6",
+    selectedDocId: null
+};
+
+// Initialize Agent Manager
+const agentManager = new AgentManager("agents-container", "agent-count");
+
+// Wire up Agent Task Execution
+agentManager.onTaskStart = async (agentId, prompt, section) => {
+    // We execute the AI Logic here
+    await runAgentAi(agentId, prompt, section);
 };
 
 const roomName = ensureRoomParam();
@@ -132,13 +116,97 @@ state.awareness = collab.awareness;
 
 state.quill = initQuill(state.ytext, state.awareness);
 state.cursorModule = state.quill.getModule("cursors");
-setupAiCursorAwareness();
+setupAgentCursorSync(); // Sync agent cursors across clients check
 
-renderDataset();
-renderHistory();
+renderDemoCards();
+// history calls removed
 attachEventListeners();
-trackHistory();
 updateAiModeBadge();
+
+// --- Demo Card Rendering ---
+function renderDemoCards() {
+    const listContainer = document.getElementById("demo-docs-list");
+    const actionsContainer = document.getElementById("demo-actions-container");
+
+    if (!listContainer || !actionsContainer) return;
+
+    listContainer.innerHTML = "";
+
+    DOCUMENTS.forEach(doc => {
+        const card = document.createElement("div");
+        card.className = `card shadow-sm mb-2 demo-card ${state.selectedDocId === doc.id ? 'border-primary bg-primary bg-opacity-10' : ''}`;
+        card.style.cursor = "pointer";
+        card.innerHTML = `
+            <div class="card-body p-2 d-flex align-items-center gap-2">
+                <div class="rounded-circle bg-white p-2 text-primary border">
+                    <i class="bi ${doc.icon || 'bi-file-text'}"></i>
+                </div>
+                <div class="overflow-hidden">
+                    <h6 class="mb-0 text-truncate fw-bold" style="font-size: 0.9rem;">${doc.title}</h6>
+                    <small class="text-muted text-xs text-truncate d-block">${doc.description}</small>
+                </div>
+            </div>
+        `;
+
+        card.onclick = () => {
+            state.selectedDocId = doc.id;
+            replaceDocumentText(doc.content, "demo-load");
+            renderDemoCards(); // Re-render to update selection style
+            renderActions(doc, actionsContainer);
+            showToast(`Loaded ${doc.title}`);
+        };
+
+        listContainer.appendChild(card);
+    });
+
+    // If no selection, render empty state or first doc's actions if desired
+    if (!state.selectedDocId) {
+        actionsContainer.innerHTML = `<div class="text-center text-muted small py-3">Select a document above to see agent actions.</div>`;
+    }
+}
+
+function renderActions(doc, container) {
+    container.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold mb-0 text-secondary text-xs text-uppercase">Available Agents</h6>
+        </div>
+    `;
+
+    const grid = document.createElement("div");
+    grid.className = "d-flex flex-column gap-2";
+
+    doc.prompts.forEach(prompt => {
+        const btn = document.createElement("button");
+        const role = getAgentRoleForSection(prompt.section);
+        btn.className = "btn btn-outline-dark text-start p-2 d-flex align-items-center gap-2 w-100 border-0 shadow-sm bg-white";
+        btn.style.fontSize = "13px";
+        btn.innerHTML = `
+            <span class="badge rounded-circle p-2" style="background-color: ${role.color}20; color: ${role.color}">
+                <i class="bi bi-robot"></i>
+            </span>
+            <div class="lh-sm">
+                <div class="fw-bold">${prompt.label}</div>
+                <small class="text-muted text-xs">${prompt.section}</small>
+            </div>
+            <i class="bi bi-play-circle ms-auto text-secondary"></i>
+        `;
+
+        btn.onclick = () => {
+            // Spawn Agent
+            agentManager.spawnAgent(`${role.name} (${state.userName})`, role.role, role.color, prompt, prompt.section);
+        };
+        grid.appendChild(btn);
+    });
+
+    container.appendChild(grid);
+}
+
+function getAgentRoleForSection(section) {
+    if (section.includes("Legal") || section.includes("Indemnification") || section.includes("Liab")) return { name: "Legal Bot", role: "Legal Counsel", color: "#ef4444" };
+    if (section.includes("Budget") || section.includes("Financ")) return { name: "Finance Bot", role: "Controller", color: "#10b981" };
+    if (section.includes("Security") || section.includes("Tech")) return { name: "SecOps Bot", role: "Security", color: "#f59e0b" };
+    return { name: "Editor Bot", role: "Copy Editor", color: "#3b82f6" };
+}
 
 function loadSettings() {
     try {
@@ -147,7 +215,6 @@ function loadSettings() {
             apiKey: stored?.apiKey || "",
             baseUrl: stored?.baseUrl || "https://api.openai.com/v1",
             model: stored?.model || "gpt-4o-mini",
-            signaling: normalizeSignalingList(stored?.signaling),
             signaling: normalizeSignalingList(stored?.signaling)
         };
     } catch {
@@ -226,7 +293,7 @@ function initCollaboration(room) {
             number: aliasInfo.number
         });
         state.userName = nextName;
-        refreshLocalAiCursorLabel();
+        // refreshLocalAiCursorLabel(); // Deprecated
     });
 
     let rtcConnected = false;
@@ -361,56 +428,7 @@ function handleUpload(event) {
         });
 }
 
-function renderDataset() {
-    datasetTableEl.innerHTML = DATASET.map(
-        (row) => `
-        <tr>
-            <td>${row.title}</td>
-            <td>${row.role}</td>
-            <td>${row.location}</td>
-            <td>${row.comp}</td>
-            <td>${row.updated}</td>
-        </tr>`
-    ).join("");
-    datasetMetaEl.textContent = `${DATASET.length} rows`;
-}
-
-function trackHistory() {
-    state.ytext.observe((event, transaction) => {
-        if (transaction.origin === null) return;
-        const stamp = new Date().toLocaleTimeString();
-        event.changes.delta.forEach((change) => {
-            if (!change.insert && !change.delete) return;
-            const entry = {
-                type: change.insert ? "insert" : "delete",
-                snippet: (change.insert || `${change.delete} characters removed`).toString().slice(0, 120),
-                time: stamp
-            };
-            historyEntries.unshift(entry);
-            if (historyEntries.length > MAX_HISTORY_ITEMS) historyEntries.pop();
-        });
-        renderHistory();
-    });
-}
-
-function renderHistory() {
-    if (!historyEntries.length) {
-        historyListEl.innerHTML = `<div class="text-center text-muted py-4">No edits yet</div>`;
-        historyCountEl.textContent = "0";
-        return;
-    }
-    historyListEl.innerHTML = historyEntries.map(
-        (entry) => `
-        <div class="list-group-item">
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="badge text-bg-${entry.type === "insert" ? "success" : "danger"} text-uppercase">${entry.type}</span>
-                <small class="text-muted">${entry.time}</small>
-            </div>
-            <div class="mt-2 small text-truncate">${entry.snippet}</div>
-        </div>`
-    ).join("");
-    historyCountEl.textContent = String(historyEntries.length);
-}
+// Dataset and History render functions removed
 
 function replaceDocumentText(nextText, origin = "manual") {
     if (!state.ydoc || !state.ytext) return;
@@ -432,19 +450,22 @@ function updateAiModeBadge() {
     }
 }
 
+
 async function applyInstruction(instruction) {
+    // Manual Global Override
     if (state.isAiTyping) return;
-    updateAiCursor(null);
     state.isAiTyping = true;
+    updateAgentCursor("global-ai", null); // Clear
+
     applyBtn.disabled = true;
     applyBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Streaming...';
 
+    const agentId = `manual-ai-${state.userNumber || "guest"}`;
+    const agentName = `${state.userName || "User"} (AI)`;
+    const agentColor = state.aiColor;
+
     try {
-        if (state.apiKey) {
-            await runLiveAi(instruction);
-        } else {
-            await runMockAi(instruction);
-        }
+        await orchestrateAndSpawn(instruction);
     } catch (error) {
         console.error(error);
         showToast(`AI error: ${error.message}`, true);
@@ -452,32 +473,156 @@ async function applyInstruction(instruction) {
         state.isAiTyping = false;
         applyBtn.disabled = false;
         applyBtn.innerHTML = '<i class="bi bi-stars"></i> Apply Instruction';
+        // updateAgentCursor(agentId, null); // Keep cursor visible
     }
 }
 
-async function runMockAi(instruction) {
+async function runAgentAi(agentId, promptObj, section) {
+    const agent = agentManager.agents.get(agentId);
+    if (!agent) return;
+
+    agentManager.updateAgentLog(agentId, "Reading document...");
+    const instruction = promptObj.instruction;
+    const currentText = state.ytext.toString();
+
+    // Check for section context
+    // If section string provided (e.g. "Section 6"), we could narrow context, 
+    // but for now we pass full doc and instruction.
+
+    agentManager.updateAgentLog(agentId, "Querying LLM...");
+    if (state.apiKey) {
+        await runLiveAiTask(agentId, agent.name, agent.color, instruction, (msg) => agentManager.updateAgentLog(agentId, msg));
+    } else {
+        await runMockAiTask(agentId, agent.name, agent.color, instruction);
+    }
+}
+
+async function runMockAiTask(agentId, name, color, instruction) {
     const text = instruction.toLowerCase();
     await wait(800);
-    let target = "END_OF_DOC";
-    let replacement = `\n\n5. REMOTE WORK\nThe Employee may work remotely up to 3 days per week.`;
+
+    // Simple mock logic
+    let target = null;
+    let replacement = "";
+
+    // Heuristics based on common demo prompts & user input
     if (text.includes("salary") || text.includes("compensation")) {
         target = "[INSERT_SALARY]";
-        replacement = "$145,000";
-    } else if (text.includes("name")) {
-        target = "[INSERT_EMPLOYEE_NAME]";
-        replacement = "Jamie Rivera";
-    } else if (text.includes("start")) {
-        target = "[INSERT_START_DATE]";
-        replacement = "October 1st, 2025";
+        replacement = "$165,000";
+    } else if (text.includes("liability") || text.includes("insurance")) {
+        target = "limits of not less than $2,000,000";
+        replacement = "limits of not less than $5,000,000 (and naming Landlord as additional insured)";
+    } else if (text.includes("password")) {
+        target = "10 minutes or less";
+        replacement = "5 minutes or less, and requiring MFA";
+    } else if (text.includes("budget")) {
+        target = "Development Resources: 3 Full-stack Engineers";
+        replacement = "Development Resources: 3 Full-stack Engineers, 1 AI Specialist, +10% Contingency";
+    } else if (text.includes("name") && text.includes("update")) {
+        // "Update name to Pavan"
+        // Extract name 
+        const match = instruction.match(/name to\s+([^\s]+)/i);
+        const newName = match ? match[1] : "Pavan";
+
+        // Try to find placeholders in Commercial Lease
+        if (state.ytext.toString().includes("[TENANT_NAME]")) {
+            target = "[TENANT_NAME]";
+            replacement = newName;
+        } else if (state.ytext.toString().includes("Tenant Name")) {
+            target = "Tenant Name";
+            replacement = newName;
+        }
+    } else if (text.includes("section 3") && text.includes("rent")) {
+        target = "payable in advance on the first day of each calendar month.";
+        replacement = "payable in advance on the first day of each calendar month, subject to an annual increase of 3% on the anniversary of the commencement date.";
     }
-    await simulateStreamingEdit(target, replacement);
+
+    // Fallback: If no heuristic match, DO NOT append to doc.
+    if (!target) {
+        agentManager.updateAgentLog(agentId, "Mock check: No specific edits found for this instruction.");
+        // Try to find user cursor to show we are "there" but don't edit
+        if (state.awareness) {
+            const localState = state.awareness.getLocalState();
+            if (localState && localState.cursor) {
+                // Flash cursor there
+                updateAgentCursor(agentId, localState.cursor.index, 0, name, color);
+                await wait(1000);
+            }
+        }
+        return;
+    }
+
+    // Generic heuristic if target is "END_OF_DOC" was removed.
+    // We only edit if we found a valid target.
+
+    if (target) {
+        agentManager.updateAgentLog(agentId, `Found match: "${target.slice(0, 20)}..."`);
+        await simulateStreamingEdit(target, replacement, agentId, name, color);
+        agentManager.updateAgentLog(agentId, "Edit complete.");
+    }
 }
 
-async function runLiveAi(instruction) {
+async function orchestrateAndSpawn(instruction) {
+    // 1. Live AI Orchestration
+    if (state.apiKey) {
+        agentManager.updateAgentLog(`manual-ai-${state.userNumber}`, "Orchestrating plan...");
+        try {
+            const body = {
+                model: state.model,
+                temperature: 0.1,
+                messages: [
+                    {
+                        role: "system",
+                        content: `You are a Lead Editor. Break the user's request into 1 to 3 distinct sub-tasks for different specialists. 
+RETURN JSON: { "tasks": [{ "role": "string", "name": "string", "instruction": "string", "section_context": "string" }] }.
+Example: Request "Fix headers and update dates" -> tasks: [{ "role": "Formatter", "instruction": "Fix headers", "section_context": "Header" }, { "role": "Clerk", "instruction": "Update dates", "section_context": "Dates" }]`
+                    },
+                    { role: "user", content: instruction }
+                ],
+                response_format: { type: "json_object" }
+            };
+
+            const res = await fetch(`${state.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.apiKey}` },
+                body: JSON.stringify(body)
+            });
+
+            const data = await res.json();
+            const plan = JSON.parse(data.choices[0].message.content);
+
+            if (plan.tasks && plan.tasks.length > 0) {
+                // Spawn parallel agents
+                plan.tasks.forEach(task => {
+                    agentManager.spawnAgent(`${task.name} (${state.userName})`, task.role, deriveAiColor(task.role), { label: "Manual Task", instruction: task.instruction }, task.section_context);
+                });
+                return;
+            }
+        } catch (e) {
+            console.warn("Orchestration failed, falling back to single agent", e);
+        }
+    }
+
+    // 2. Mock / Fallback (Single Agent)
+    const agentId = `manual-ai-${state.userNumber || "guest"}`;
+    const agentName = `${state.userName || "User"} (AI)`;
+    const agentColor = state.aiColor;
+
+    // We manually spawn a "Manager" agent first to show activity? 
+    // Actually, applyInstruction calls runs directly. 
+    // But to support "multiagents work parallel", we should preferably use spawnAgent even for manual override?
+    // The previous logic used 'runLiveAiTask' directly without spawning a card.
+    // Let's change Manual Override to ALWAYS spawn an agent card! 
+    // This unifies the UX.
+
+    agentManager.spawnAgent(agentName, "Manual Override", agentColor, { label: "Manual Instruction", instruction: instruction }, "General");
+}
+
+async function runLiveAiTask(agentId, name, color, instruction, logFn) {
     const currentText = state.ytext.toString();
     const body = {
         model: state.model,
-        temperature: 0.4,
+        temperature: 0.3,
         response_format: {
             type: "json_schema",
             json_schema: {
@@ -490,14 +635,13 @@ async function runLiveAi(instruction) {
                             items: {
                                 type: "object",
                                 properties: {
-                                    match: { type: "string", description: "Exact text from the contract to replace" },
-                                    replacement: { type: "string", description: "New text to insert" }
+                                    match: { type: "string", description: "Exact unique text from the document to replace." },
+                                    replacement: { type: "string", description: "The new text to insert." }
                                 },
                                 required: ["match", "replacement"],
                                 additionalProperties: false
                             }
-                        },
-                        summary: { type: "string" }
+                        }
                     },
                     required: ["operations"],
                     additionalProperties: false
@@ -507,320 +651,257 @@ async function runLiveAi(instruction) {
         messages: [
             {
                 role: "system",
-                content: "You are a helpful legal co-author. Return JSON: {operations:[{match, replacement}], summary?}. The match string must be copied from the existing document."
+                content: `You are ${name}, a helpful assistant.Return JSON: { operations: [{ match, replacement }] }. The 'match' text must exist exactly in the document.Do not hallucinate matches.`
             },
             {
                 role: "user",
-                content: `Document:\n${currentText}\n\nInstruction: ${instruction}`
+                content: `Document: \n${currentText} \n\nInstruction: ${instruction} `
             }
         ]
     };
 
     const response = await fetch(`${state.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${state.apiKey}`
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.apiKey}` },
         body: JSON.stringify(body)
     });
-    if (!response.ok) throw new Error("Request failed");
+
+    if (!response.ok) {
+        throw new Error(`Auth Error: ${response.status}`);
+    }
+
     const data = await response.json();
     const rawContent = data.choices?.[0]?.message?.content;
     let operations = [];
-    if (rawContent) {
-        let jsonText = "";
-        if (Array.isArray(rawContent)) {
-            jsonText = rawContent.map((part) => part.text || "").join("");
-        } else if (typeof rawContent === "string") {
-            jsonText = rawContent;
-        }
-        try {
-            const parsed = JSON.parse(jsonText);
-            operations = parsed.operations || [];
-        } catch (error) {
-            console.warn("Failed to parse structured response; falling back to diff.", error);
-        }
+
+    try {
+        const parsed = JSON.parse(rawContent);
+        operations = parsed.operations || [];
+    } catch (e) {
+        if (logFn) logFn("Failed to parse JSON, trying diff...");
     }
 
     if (operations.length) {
-        const selection = state.quill.getSelection();
-        if (selection && selection.length > 0) {
-            const approved = await askForConfirmation();
-            if (!approved) return;
-        }
-        await applyOperations(operations);
+        if (logFn) logFn(`Applying ${operations.length} edits...`);
+        await applyOperations(operations, agentId, name, color);
     } else {
-        const fallbackText = Array.isArray(rawContent)
-            ? rawContent.map((part) => part.text || "").join("")
-            : rawContent;
-        if (fallbackText) {
-            await applySmartDiffV2(currentText, fallbackText);
+        // Fallback: if text returned, diff it
+        if (typeof rawContent === 'string' && rawContent.length > 5) {
+            if (logFn) logFn("Applying smart diff...");
+            await applySmartDiffV2(currentText, rawContent, agentId, name, color);
         } else {
-            throw new Error("Model returned no usable edits.");
+            if (logFn) logFn("No edits returned.");
         }
     }
 }
 
-function isUserEditingRange(startIndex, endIndex) {
-    const range = state.quill.getSelection();
-    if (!range) return false;
-    const userStart = range.index;
-    const userEnd = range.index + range.length;
-    const buffer = 8;
-    return userStart < endIndex + buffer && userEnd > startIndex - buffer;
-}
-
-async function simulateStreamingEdit(target, textToType) {
+async function simulateStreamingEdit(target, textToType, agentId, name, color, cleanInsertIndex = null) {
     const docLength = state.ytext.length;
     let index = 0;
-    let lastIndex = null;
-    if (target === "END_OF_DOC") {
+
+    if (cleanInsertIndex !== null) {
+        index = cleanInsertIndex;
+    } else if (target === "END_OF_DOC") {
         index = docLength;
-    } else {
+    } else if (target) {
         const current = state.ytext.toString();
         index = current.indexOf(target);
         if (index === -1) {
-            index = docLength;
-            textToType = `\n${textToType}`;
-        } else {
-            updateAiCursor(index, target.length);
-            state.ytext.delete(index, target.length);
+            // Target not found
+            return;
         }
+        // Delete target first
+        updateAgentCursor(agentId, index, target.length, name, color);
+        await wait(500);
+        state.ydoc.transact(() => {
+            state.ytext.delete(index, target.length);
+        }, agentId); // Use agentId as origin
     }
+
     let relPos = Y.createRelativePositionFromTypeIndex(state.ytext, index);
+
+    // Type replacement
     for (const char of textToType) {
         const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
         if (absPos) {
-            updateAiCursor(absPos.index, 1);
-            state.ytext.insert(absPos.index, char);
+            updateAgentCursor(agentId, absPos.index, 1, name, color);
+            state.ydoc.transact(() => {
+                state.ytext.insert(absPos.index, char);
+            }, agentId);
             relPos = Y.createRelativePositionFromTypeIndex(state.ytext, absPos.index + 1);
-            lastIndex = absPos.index + 1;
         }
-        await wait(25);
+        await wait(20);
     }
-    if (lastIndex !== null) {
-        updateAiCursor(lastIndex, 0);
-    }
+    // updateAgentCursor(agentId, null);
 }
 
-async function applyOperations(operations) {
-    let lastAnchor = null;
+async function applyOperations(operations, agentId, name, color) {
     for (const op of operations) {
-        const match = typeof op.match === "string" ? op.match : op.target || "";
-        const replacement = op.replacement ?? op.content ?? "";
+        const match = op.match;
+        const replacement = op.replacement;
         if (!match) continue;
+
         const current = state.ytext.toString();
         const idx = current.indexOf(match);
         if (idx === -1) continue;
 
-        const conflictRangeEnd = idx + match.length;
-        if (isUserEditingRange(idx, conflictRangeEnd)) {
-            const approved = await askForConfirmation();
-            if (!approved) continue;
-        }
+        // Visual Highlight
+        updateAgentCursor(agentId, idx, match.length, name, color);
+        await wait(600); // Pause to show what's being deleted
 
-        if (match.length) {
-            updateAiCursor(idx, match.length);
-            state.ydoc.transact(() => {
-                state.ytext.delete(idx, match.length);
-            }, "ai-edit");
-        }
+        // Delete
+        state.ydoc.transact(() => {
+            state.ytext.delete(idx, match.length);
+        }, agentId);
 
+        // Type Insert
         let relPos = Y.createRelativePositionFromTypeIndex(state.ytext, idx);
         for (const char of replacement) {
-            await wait(25);
+            await wait(15);
             state.ydoc.transact(() => {
                 const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
-                const insertIndex = absPos ? absPos.index : idx;
-                state.ytext.insert(insertIndex, char);
-                relPos = Y.createRelativePositionFromTypeIndex(state.ytext, insertIndex + 1);
-                updateAiCursor(insertIndex + 1, 0);
-                lastAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, insertIndex + 1);
-            }, "ai-edit");
-        }
-
-        if (!replacement.length) {
-            lastAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, idx);
+                if (absPos) {
+                    state.ytext.insert(absPos.index, char);
+                    updateAgentCursor(agentId, absPos.index + 1, 0, name, color);
+                    relPos = Y.createRelativePositionFromTypeIndex(state.ytext, absPos.index + 1);
+                }
+            }, agentId);
         }
     }
-
-    if (lastAnchor) {
-        updateAiCursor(lastAnchor, 0);
-    } else {
-        updateAiCursor(null);
-    }
+    // updateAgentCursor(agentId, null);
 }
 
-async function applySmartDiffV2(oldText, newText) {
+async function applySmartDiffV2(oldText, newText, agentId, name, color) {
     const changes = diff(oldText, newText);
     let scanIndex = 0;
-    const ops = [];
-    for (const [action, chunk] of changes) {
-        if (action === 0) {
-            scanIndex += chunk.length;
-            ops.push({ type: "EQ", anchor: Y.createRelativePositionFromTypeIndex(state.ytext, scanIndex) });
-        } else if (action === -1) {
-            scanIndex += chunk.length;
-            ops.push({
-                type: "DEL",
-                endAnchor: Y.createRelativePositionFromTypeIndex(state.ytext, scanIndex)
-            });
-        } else if (action === 1) {
-            ops.push({ type: "INS", content: chunk });
-        }
-    }
 
+    // Similar logic to legacy, but using agent cursor
+    // ... simplified loop ...
     let headAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, 0);
-    let lastEditAnchor = null;
 
-    for (const op of ops) {
-        if (op.type === "EQ") {
-            headAnchor = op.anchor;
-        } else if (op.type === "DEL") {
+    for (const [action, chunk] of changes) {
+        if (action === 0) { // EQ
+            // Move anchor
             const startPos = Y.createAbsolutePositionFromRelativePosition(headAnchor, state.ydoc);
-            const endPos = Y.createAbsolutePositionFromRelativePosition(op.endAnchor, state.ydoc);
-            if (startPos && endPos) {
-                const deleteSize = endPos.index - startPos.index;
-                if (deleteSize > 0) {
-                    updateAiCursor(headAnchor, deleteSize);
-                    await wait(25);
-                    state.ytext.delete(startPos.index, deleteSize);
-                    lastEditAnchor = headAnchor;
-                }
+            if (startPos) {
+                headAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, startPos.index + chunk.length);
             }
-            headAnchor = op.endAnchor;
-        } else if (op.type === "INS") {
+        } else if (action === -1) { // DEL
             const startPos = Y.createAbsolutePositionFromRelativePosition(headAnchor, state.ydoc);
-            if (!startPos) continue;
-            let insertionAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, startPos.index);
-            for (const char of op.content) {
-                const abs = Y.createAbsolutePositionFromRelativePosition(insertionAnchor, state.ydoc);
-                if (abs) {
-                    updateAiCursor(abs.index, 1);
-                    state.ytext.insert(abs.index, char);
-                    insertionAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, abs.index + 1);
-                }
+            if (startPos) {
+                updateAgentCursor(agentId, startPos.index, chunk.length, name, color);
+                await wait(25);
+                state.ydoc.transact(() => {
+                    state.ytext.delete(startPos.index, chunk.length);
+                }, agentId);
+                // Head anchor stays at startPos (content shifted)
             }
-            lastEditAnchor = insertionAnchor;
+        } else if (action === 1) { // INS
+            const startPos = Y.createAbsolutePositionFromRelativePosition(headAnchor, state.ydoc);
+            if (startPos) {
+                let instAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, startPos.index);
+                for (const char of chunk) {
+                    const abs = Y.createAbsolutePositionFromRelativePosition(instAnchor, state.ydoc);
+                    if (abs) {
+                        updateAgentCursor(agentId, abs.index, 1, name, color);
+                        state.ydoc.transact(() => {
+                            state.ytext.insert(abs.index, char);
+                        }, agentId);
+                        instAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, abs.index + 1);
+                    }
+                    // wait(5) // fast
+                }
+                headAnchor = instAnchor;
+            }
         }
     }
-    if (lastEditAnchor || headAnchor) {
-        updateAiCursor(lastEditAnchor || headAnchor, 0);
+    // updateAgentCursor(agentId, null);
+}
+
+function updateAgentCursor(agentId, position, length = 0, name = "AI", color = "#8b5cf6", isRemote = false) {
+    if (!state.cursorModule || !state.ydoc) return;
+
+    // 1. Render locally immediately (visual feedback)
+    if (position === null) {
+        state.cursorModule.removeCursor(agentId);
     } else {
-        updateAiCursor(null);
+        state.cursorModule.createCursor(agentId, name, color);
+        // Only update UI if we have a valid DOM/editor state
+        state.cursorModule.moveCursor(agentId, { index: position, length });
+        state.cursorModule.toggleFlag(agentId, true);
+    }
+
+    // 2. Broadcast/Persist (using RelativePosition)
+    if (!isRemote) {
+        const cursorsMap = state.ydoc.getMap("agent-cursors");
+        state.ydoc.transact(() => {
+            if (position === null) {
+                cursorsMap.delete(agentId);
+            } else {
+                // Convert absolute index to RelativePosition
+                try {
+                    const relPos = Y.createRelativePositionFromTypeIndex(state.ytext, position);
+                    const encoded = Y.encodeRelativePosition(relPos);
+                    // Store as array for JSON compatibility in map
+                    const relPosArr = Array.from(encoded);
+                    cursorsMap.set(agentId, { relPos: relPosArr, length, name, color });
+                } catch (e) {
+                    console.warn("Failed to encode cursor", e);
+                }
+            }
+        }, "agent-cursor-sync");
     }
 }
 
-function setupAiCursorAwareness() {
-    const awareness = state.awareness;
-    const cursorModule = state.cursorModule;
-    const activeIds = new Set();
+function setupAgentCursorSync() {
+    if (!state.ydoc) return;
+    const cursorsMap = state.ydoc.getMap("agent-cursors");
 
-    const render = () => {
-        const seen = new Set();
-        awareness.getStates().forEach((entry, clientId) => {
-            if (!entry.aiCursor) return;
-            const cursorId = `ai-agent-${clientId}`;
-            seen.add(cursorId);
+    // Helper: Refresh all cursors from Map (Resolving RelPos -> AbsPos)
+    const refreshCursors = () => {
+        cursorsMap.forEach((data, agentId) => {
+            if (!data || !data.relPos) return;
             try {
-                let encoded = entry.aiCursor.relPos;
-                if (!(encoded instanceof Uint8Array)) {
-                    encoded = new Uint8Array(Object.values(encoded));
-                }
-                const relPos = Y.decodeRelativePosition(encoded);
+                // Decode RelativePosition
+                const compiled = new Uint8Array(data.relPos);
+                const relPos = Y.decodeRelativePosition(compiled);
+                // Resolve to current absolute position
                 const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
+
                 if (absPos) {
-                    const label =
-                        entry.aiCursor.aiLabel ||
-                        (entry.aiCursor.alias ? `AI ${entry.aiCursor.alias}` : null) ||
-                        (entry.user?.number ? `AI User ${entry.user.number}` : null) ||
-                        (entry.user?.name ? `AI (${entry.user.name})` : "AI");
-                    const color = entry.aiCursor.color || entry.user?.color || "#8b5cf6";
-                    cursorModule.createCursor(cursorId, label, color);
-                    cursorModule.moveCursor(cursorId, { index: absPos.index, length: entry.aiCursor.length || 0 });
-                    cursorModule.toggleFlag(cursorId, true);
+                    // Update UI directly (isRemote=true equivalent)
+                    state.cursorModule.createCursor(agentId, data.name, data.color);
+                    state.cursorModule.moveCursor(agentId, { index: absPos.index, length: data.length });
+                    state.cursorModule.toggleFlag(agentId, true);
+                } else {
+                    // Position invalid/deleted
+                    state.cursorModule.removeCursor(agentId);
                 }
-            } catch (error) {
-                console.warn("Unable to render AI cursor", error);
+            } catch (e) {
+                console.warn("Failed to refresh cursor", e);
             }
         });
-        activeIds.forEach((id) => {
-            if (!seen.has(id)) {
-                cursorModule.removeCursor(id);
-                activeIds.delete(id);
-            }
-        });
-        seen.forEach((id) => activeIds.add(id));
     };
 
-    awareness.on("change", ({ removed }) => {
-        render();
-        removed.forEach((clientId) => {
-            const cursorId = `ai-agent-${clientId}`;
-            cursorModule.removeCursor(cursorId);
-            activeIds.delete(cursorId);
-        });
+    // 1. Observe Map Changes (Remote Updates)
+    cursorsMap.observe((event) => {
+        if (event.transaction.origin === "agent-cursor-sync") return; // Ignore our own sync ops
+
+        // We can just call refreshCursors to be safe and simple, 
+        // or optimize. Since this runs on every remote keystroke (if they broadcast),
+        // let's just trigger refreshCursors() which is robust.
+        refreshCursors();
     });
-    render();
-}
 
-function updateAiCursor(position, length = 0) {
-    if (!state.awareness || !state.ytext) return;
-    if (position === null) {
-        state.awareness.setLocalStateField("aiCursor", null);
-        state.cursorModule?.removeCursor("ai-agent-local");
-        return;
-    }
-    let encoded;
-    if (typeof position === "number") {
-        const relPos = Y.createRelativePositionFromTypeIndex(state.ytext, position);
-        encoded = Y.encodeRelativePosition(relPos);
-    } else {
-        encoded = Y.encodeRelativePosition(position);
-    }
-    const label = getLocalAiLabel();
-    const color = state.aiColor || "#8b5cf6";
-    state.awareness.setLocalStateField("aiCursor", {
-        relPos: encoded,
-        length,
-        aiLabel: label,
-        alias: state.userAlias,
-        number: state.userNumber,
-        color
+    // 2. Observe Text Changes (Local & Remote)
+    // This ensures that when WE type, the "floating" agent cursors anchor correctly.
+    state.ytext.observe(() => {
+        refreshCursors();
     });
-    const abs = typeof position === "number"
-        ? { index: position }
-        : Y.createAbsolutePositionFromRelativePosition(position, state.ydoc);
-    if (abs) {
-        state.cursorModule?.createCursor("ai-agent-local", label, color);
-        state.cursorModule?.moveCursor("ai-agent-local", { index: abs.index, length });
-        state.cursorModule?.toggleFlag("ai-agent-local", true);
-    }
 }
 
-function getLocalAiLabel() {
-    if (state.userNumber) {
-        const base = `AI User ${state.userNumber}`;
-        return state.userName ? `${base} (${state.userName})` : base;
-    }
-    return `AI (${state.userName || "Editor"})`;
-}
-
-function refreshLocalAiCursorLabel() {
-    if (!state.awareness || !state.ydoc) return;
-    const local = state.awareness.getLocalState();
-    if (!local?.aiCursor?.relPos) return;
-    let encoded = local.aiCursor.relPos;
-    if (!(encoded instanceof Uint8Array)) {
-        encoded = new Uint8Array(Object.values(encoded));
-    }
-    const relPos = Y.decodeRelativePosition(encoded);
-    const abs = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
-    if (abs) {
-        updateAiCursor(abs.index, local.aiCursor.length || 0);
-    }
-}
+// Cursor synchronization helpers for AI are now handled by AgentManager logic locally.
+// Future: propagate agent cursors via Awareness if needed for multi-user visibility.
 
 function askForConfirmation() {
     return new Promise((resolve) => {
@@ -866,3 +947,4 @@ function showToast(message, isError = false) {
     const toast = new bootstrap.Toast(toastEl);
     toast.show();
 }
+window.showToast = showToast;

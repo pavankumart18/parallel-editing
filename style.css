@@ -229,3 +229,27 @@ body {
     border-bottom-left-radius: 0.5rem;
     border-bottom-right-radius: 0.5rem;
 }
+
+/* Demo Cards */
+.demo-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid transparent;
+}
+.demo-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+    border-color: var(--primary-color);
+}
+/* Agent Logs */
+.agent-log-container {
+    scrollbar-width: thin;
+    scrollbar-color: #4b5563 #1f2937;
+}
+.agent-log-container::-webkit-scrollbar {
+    width: 6px;
+}
+.agent-log-container::-webkit-scrollbar-thumb {
+    background-color: #4b5563;
+    border-radius: 3px;
+}
+

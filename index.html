@@ -81,79 +81,61 @@
             </div>
 
             <!-- AI Sidebar -->
-            <aside class="sidebar premium-shadow">
-                <div class="ai-panel-header">
-                    <h6 class="fw-bold mb-0"><i class="bi bi-robot me-2 text-primary"></i>AI Collaborator</h6>
-                    <small class="text-muted">Describe changes you want the AI to make.</small>
+            <aside class="sidebar premium-shadow d-flex flex-column h-100">
+                <!-- 1. Demo Documents List -->
+                <div class="sidebar-section border-bottom p-3 bg-body-tertiary">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0 small text-uppercase text-secondary"><i
+                                class="bi bi-collection-play me-2 text-primary"></i>Demo Docs</h6>
+                    </div>
+                    <div id="demo-docs-list" class="d-flex flex-column gap-2">
+                        <div class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+                        </div>
+                    </div>
                 </div>
-                <div class="ai-panel-body d-flex flex-column">
-                    <div class="instruction-box">
-                        <label for="ai-instruction"
-                            class="form-label text-xs fw-bold text-uppercase text-secondary">Instruction</label>
-                        <textarea id="ai-instruction" class="form-control border-0 shadow-none p-0" rows="4"
-                            placeholder="e.g., 'Update the salary to $120,000 and add a remote work clause.'"></textarea>
+
+                <!-- 2. Actions / Prompts for Selected Doc -->
+                <div id="demo-actions-container" class="sidebar-section border-bottom p-3 bg-body-tertiary"
+                    style="min-height: 120px;">
+                    <div class="text-center text-muted small py-3">Select a document above...</div>
+                </div>
+
+                <!-- 3. Live Agents Activity -->
+                <div class="sidebar-section d-flex flex-column flex-grow-1 overflow-hidden bg-white">
+                    <div
+                        class="p-3 border-bottom d-flex justify-content-between align-items-center bg-white sticky-top">
+                        <h6 class="fw-bold mb-0 small text-uppercase text-secondary"><i
+                                class="bi bi-activity me-2 text-success"></i>Live Agents</h6>
+                        <span class="badge bg-secondary rounded-pill" id="agent-count">0</span>
+                    </div>
+                    <div id="agents-container" class="p-3 flex-grow-1 overflow-y-auto" style="min-height: 200px;">
+                        <!-- Agent items will be injected here -->
+                        <div class="text-center text-muted mt-4 small">
+                            <i class="bi bi-robot fs-3 d-block mb-2 opacity-50"></i>
+                            Waiting for task...
+                        </div>
                     </div>
 
-                    <button id="btn-apply-ai" class="btn btn-ai mb-3">
-                        <i class="bi bi-stars"></i> Apply Instruction
-                    </button>
-
-                    <div class="alert alert-light border small text-muted mt-auto">
-                        <i class="bi bi-info-circle me-1"></i>
-                        <strong>How it works:</strong> The AI edits the document in real-time alongside you using
-                        CRDTs.
-                        No conflicts, no jumping cursors.
+                    <!-- Manual Input Footer -->
+                    <div class="p-3 border-top bg-white mt-auto">
+                        <label for="ai-instruction"
+                            class="form-label text-xs fw-bold text-uppercase text-secondary mb-1">Manual
+                            Override</label>
+                        <div class="input-group">
+                            <input type="text" id="ai-instruction" class="form-control form-control-sm"
+                                placeholder="Type instruction...">
+                            <button class="btn btn-primary btn-sm" id="btn-apply-ai">
+                                <i class="bi bi-stars"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </aside>
         </div>
     </div>
 
-    <section class="info-panels">
-        <div class="container py-4">
-            <div class="row g-4">
-                <div class="col-lg-6">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span><i class="bi bi-clock-history me-2"></i>Change History</span>
-                            <span class="badge text-bg-secondary" id="history-count">0</span>
-                        </div>
-                        <div class="card-body p-0">
-                            <div id="history-list" class="list-group list-group-flush history-list">
-                                <div class="text-center text-muted py-4">No edits yet</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-6">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span><i class="bi bi-table me-2"></i>Sample Dataset</span>
-                            <span class="badge text-bg-info" id="dataset-meta"></span>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th scope="col">Title</th>
-                                        <th scope="col">Role</th>
-                                        <th scope="col">Location</th>
-                                        <th scope="col">Comp</th>
-                                        <th scope="col">Updated</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="dataset-table">
-                                    <tr>
-                                        <td colspan="5" class="text-center text-muted py-4">Loading dataset…</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
+    <!-- Info Panels Removed -->
 
     <!-- Settings Modal -->
     <div class="modal fade" id="settingsModal" tabindex="-1">
