@@ -9,6 +9,10 @@ import { AgentManager } from "./agent-manager.js";
 
 Quill.register("modules/cursors", QuillCursors);
 
+// DOM Helper (Uniformity Guideline)
+const $ = document.querySelector.bind(document);
+const $$ = document.querySelectorAll.bind(document);
+
 const SETTINGS_KEY = "parallel_edit_settings";
 const DEFAULT_SIGNALING = [
     "wss://signaling.yjs.dev",
@@ -50,24 +54,18 @@ function normalizeSignalingList(value) {
     return list.length ? list : [...DEFAULT_SIGNALING];
 }
 
-// History handling removed
-
-const nameInput = document.getElementById("user-name-input");
-const statusEl = document.getElementById("connection-status");
-const aiStatusEl = document.getElementById("ai-mode-status");
-const roomNameEl = document.getElementById("room-name");
-const collaboratorCountEl = document.getElementById("collaborator-count");
-const shareBtn = document.getElementById("btn-share");
-const templateBtn = document.getElementById("btn-template");
-const uploadInput = document.getElementById("file-upload");
-const applyBtn = document.getElementById("btn-apply-ai");
-const instructionInput = document.getElementById("ai-instruction");
-// History UI elements removed
-
-// const datasetTableEl = document.getElementById("dataset-table"); // Removed? UI changed but elements might exist
-// const datasetMetaEl = document.getElementById("dataset-meta");
-const settingsForm = document.getElementById("settings-form");
-const settingsModalEl = document.getElementById("settingsModal");
+const nameInput = $("#user-name-input");
+const statusEl = $("#connection-status");
+const aiStatusEl = $("#ai-mode-status");
+const roomNameEl = $("#room-name");
+const collaboratorCountEl = $("#collaborator-count");
+const shareBtn = $("#btn-share");
+const templateBtn = $("#btn-template");
+const uploadInput = $("#file-upload");
+const applyBtn = $("#btn-apply-ai");
+const instructionInput = $("#ai-instruction");
+const settingsForm = $("#settings-form");
+const settingsModalEl = $("#settingsModal");
 const settingsModal = new bootstrap.Modal(settingsModalEl);
 
 const settings = loadSettings();
@@ -116,19 +114,75 @@ state.awareness = collab.awareness;
 
 state.quill = initQuill(state.ytext, state.awareness);
 state.cursorModule = state.quill.getModule("cursors");
-setupAgentCursorSync(); // Sync agent cursors across clients check
+setupAgentCursorSync();
 
-renderDemoCards();
-// history calls removed
+// --- Activity Logging Setup ---
+updateActivityLog(`Connecting to room: ${roomName}...`);
+
+state.awareness.on("change", () => {
+    const states = state.awareness.getStates();
+    $("#collaborator-count").innerText = states.size;
+    updateActivityLog(`Collaborators count: ${states.size}`);
+});
+
+state.webrtcProvider.on("status", (event) => {
+    if (event.connected) {
+        $("#connection-status").innerHTML = '<span class="ai-active-indicator"></span> Connected';
+        $("#connection-status").classList.replace("bg-secondary", "bg-success");
+        updateActivityLog("WebRTC Connected", "success");
+    } else {
+        $("#connection-status").innerHTML = '<span class="ai-mock-indicator"></span> Disconnected';
+        $("#connection-status").classList.replace("bg-success", "bg-secondary");
+        updateActivityLog("WebRTC Disconnected", "warning");
+    }
+});
+
+// Sync Template Selection (Available Agents)
+state.ydoc.getMap("app-state").observe(event => {
+    if (event.keysChanged.has("selectedDocId")) {
+        const newId = state.ydoc.getMap("app-state").get("selectedDocId");
+        if (newId && newId !== state.selectedDocId) {
+            const doc = DOCUMENTS.find(d => d.id === newId);
+            if (doc) {
+                state.selectedDocId = newId;
+                const actionsContainer = $("#agent-prompts-bar");
+                if (actionsContainer) renderActions(doc, actionsContainer);
+                renderTopBarDocs(); // Update highlight
+                updateActivityLog(`Host selected: ${doc.title}`, "info");
+            }
+        }
+    }
+});
+
+renderTemplatesGrid();
+renderTopBarDocs();
+setupTemplateButton();
 attachEventListeners();
 updateAiModeBadge();
+setupThemeToggle();
 
-// --- Demo Card Rendering ---
-function renderDemoCards() {
-    const listContainer = document.getElementById("demo-docs-list");
-    const actionsContainer = document.getElementById("demo-actions-container");
+// --- Activity Logger ---
+function updateActivityLog(message, type = "info") {
+    const logContainer = $("#activity-log");
+    if (!logContainer) return;
 
-    if (!listContainer || !actionsContainer) return;
+    const entry = document.createElement("div");
+    entry.className = "mb-1 text-truncate";
+    const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    let colorClass = "text-muted";
+    if (type === "success") colorClass = "text-success";
+    if (type === "warning") colorClass = "text-warning";
+    if (type === "error") colorClass = "text-danger";
+
+    entry.innerHTML = `<span class="opacity-50 me-2">[${time}]</span><span class="${colorClass}">${message}</span>`;
+    logContainer.prepend(entry); // Newest top
+}
+
+// --- Top Bar Docs Rendering (Scroller) ---
+function renderTopBarDocs() {
+    const listContainer = $("#demo-docs-list");
+    if (!listContainer) return;
 
     listContainer.innerHTML = "";
 
@@ -136,38 +190,173 @@ function renderDemoCards() {
         const card = document.createElement("div");
         card.className = `card shadow-sm demo-card flex-shrink-0 ${state.selectedDocId === doc.id ? 'border-primary bg-primary bg-opacity-10' : ''}`;
         card.style.cursor = "pointer";
-        card.style.minWidth = "260px";
-        card.style.maxWidth = "300px";
+        card.style.minWidth = "220px";
+        card.style.maxWidth = "260px";
         card.innerHTML = `
             <div class="card-body p-2 d-flex align-items-center gap-2">
-                <div class="rounded-circle bg-white p-2 text-primary border">
-                    <i class="bi ${doc.icon || 'bi-file-text'}"></i>
+                <div class="rounded-circle bg-body p-2 text-primary border me-2">
+                    <i class="bi ${doc.icon || 'bi-file-text'} fs-5"></i>
                 </div>
                 <div class="overflow-hidden">
-                    <h6 class="mb-0 text-truncate fw-bold" style="font-size: 0.9rem;">${doc.title}</h6>
-                    <small class="text-muted text-xs text-truncate d-block">${doc.description}</small>
+                    <h6 class="card-title mb-0 text-truncate fw-bold" style="font-size: 0.85rem;">${doc.title}</h6>
+                    <small class="card-text text-muted text-xs text-truncate d-block">${doc.description}</small>
                 </div>
             </div>
         `;
 
         card.onclick = () => {
-            state.selectedDocId = doc.id;
-            replaceDocumentText(doc.content, "demo-load");
-            renderDemoCards(); // Re-render to update selection style
-            renderActions(doc, actionsContainer);
-            showToast(`Loaded ${doc.title}`);
+            loadDocFromModal(doc);
+            renderTopBarDocs(); // Update selection state in top bar too
         };
 
         listContainer.appendChild(card);
     });
+}
 
-    // If no selection, render empty state or first doc's actions if desired
-    if (!state.selectedDocId) {
-        actionsContainer.innerHTML = `<div class="text-center text-muted small py-3">Select a document above to see agent actions.</div>`;
+
+// --- Templates Grid Rendering (Modal) ---
+function renderTemplatesGrid() {
+    const gridContainer = $("#templates-grid");
+    if (!gridContainer) return;
+
+    gridContainer.innerHTML = "";
+
+    DOCUMENTS.forEach(doc => {
+        const col = document.createElement("div");
+        col.className = "col";
+        col.innerHTML = `
+            <div class="card h-100 border-0 shadow-sm template-card">
+                <div class="card-body p-4 d-flex flex-column text-center">
+                    <div class="mb-3">
+                        <i class="bi ${doc.icon || 'bi-file-text'} text-primary display-5"></i>
+                    </div>
+                    <h5 class="card-title fw-bold mb-2">${doc.title}</h5>
+                    <p class="card-text text-muted small flex-grow-1">${doc.description}</p>
+                    <button class="btn btn-primary w-100 mt-3 fw-bold py-2 btn-load-template" data-id="${doc.id}">
+                        Plan & Run
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // Event Listener for the button
+        const btn = col.querySelector(".btn-load-template");
+        btn.onclick = () => {
+            loadDocFromModal(doc);
+        };
+
+        gridContainer.appendChild(col);
+    });
+}
+
+function loadDocFromModal(doc) {
+    state.selectedDocId = doc.id;
+    replaceDocumentText(doc.content, "demo-load");
+
+    // Update UI
+    const modalEl = document.getElementById('templatesModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+
+    // Render Actions in Horizontal Bar
+    const actionsContainer = $("#agent-prompts-bar");
+    if (actionsContainer) renderActions(doc, actionsContainer);
+
+    // Sync Selection to others
+    if (state.ydoc) {
+        state.ydoc.getMap("app-state").set("selectedDocId", doc.id);
     }
+
+    showToast(`Loaded template: ${doc.title}`);
+    updateActivityLog(`Loaded template: ${doc.title}`, "success");
 }
 
 function renderActions(doc, container) {
+    container.innerHTML = "";
+
+    // Header for context (optional, or just icons)
+    const label = document.createElement("span");
+    label.className = "text-muted small fw-bold me-2 text-uppercase d-none d-md-inline";
+    label.style.fontSize = "0.7rem";
+    label.innerText = "Available Agents:";
+    container.appendChild(label);
+
+    doc.prompts.forEach(prompt => {
+        const btn = document.createElement("button");
+        const role = getAgentRoleForSection(prompt.section);
+        // Pill style
+        btn.className = "btn btn-outline-secondary btn-sm rounded-pill d-flex align-items-center gap-2 border shadow-sm bg-body text-body";
+        btn.style.fontSize = "0.85rem";
+        btn.innerHTML = `
+            <i class="bi bi-robot text-primary"></i>
+            <span class="fw-medium">${prompt.label}</span>
+        `;
+
+        btn.onclick = () => {
+            // STRICT MODE: Check for LLM Config
+            if (!state.apiKey || state.apiKey === "" || state.apiKey === "sk-...") {
+                const settingsModal = new bootstrap.Modal(document.getElementById('settingsModal'));
+                settingsModal.show();
+                showToast("Please configure LLM API Key first!", true);
+                return;
+            }
+
+            const role = getAgentRoleForSection(prompt.section);
+            const userName = state.userName || "User";
+            agentManager.spawnAgent(`${role.name} (${userName})`, role.role, role.color, prompt, prompt.section);
+        };
+
+        container.appendChild(btn);
+    });
+}
+
+// Ensure the modal can be opened from the top bar button too
+function setupTemplateButton() {
+    const btn = $("#btn-template");
+    if (btn) {
+        btn.onclick = () => {
+            const modal = new bootstrap.Modal(document.getElementById('templatesModal'));
+            renderTemplatesGrid();
+            modal.show();
+        };
+        // Also remove old attributes if any
+        btn.removeAttribute("data-bs-toggle");
+        btn.removeAttribute("data-bs-target");
+    }
+}
+
+function setupThemeToggle() {
+    const btn = document.getElementById("btn-theme-toggle");
+    const icon = document.getElementById("theme-icon");
+    const html = document.documentElement;
+
+    // 1. Load preference
+    const stored = localStorage.getItem("theme");
+    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    let currentTheme = stored || (systemDark ? "dark" : "light");
+
+    const applyTheme = (theme) => {
+        html.setAttribute("data-bs-theme", theme);
+        if (theme === "dark") {
+            icon.className = "bi bi-sun-fill";
+        } else {
+            icon.className = "bi bi-moon-stars-fill";
+        }
+    };
+
+    applyTheme(currentTheme);
+
+    // 2. Toggle
+    if (btn) {
+        btn.onclick = () => {
+            currentTheme = currentTheme === "dark" ? "light" : "dark";
+            localStorage.setItem("theme", currentTheme);
+            applyTheme(currentTheme);
+        };
+    }
+}
+
+function renderActions_DEPRECATED(doc, container) {
     container.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="fw-bold mb-0 text-secondary text-xs text-uppercase">Available Agents</h6>
@@ -239,10 +428,10 @@ function persistSettings() {
 }
 
 function hydrateSettingsForm() {
-    document.getElementById("api-key").value = settings.apiKey;
-    document.getElementById("base-url").value = settings.baseUrl;
-    document.getElementById("model-name").value = settings.model;
-    const signalingField = document.getElementById("signaling-servers");
+    $("#api-key").value = settings.apiKey;
+    $("#base-url").value = settings.baseUrl;
+    $("#model-name").value = settings.model;
+    const signalingField = $("#signaling-servers");
     if (signalingField) {
         signalingField.value = (settings.signaling || DEFAULT_SIGNALING).join("\n");
     }
@@ -295,17 +484,10 @@ function initCollaboration(room) {
             number: aliasInfo.number
         });
         state.userName = nextName;
-        // refreshLocalAiCursorLabel(); // Deprecated
     });
 
     let rtcConnected = false;
     let wsConnected = false;
-
-    const transportLabel = () => {
-        if (rtcConnected) return "WebRTC";
-        if (wsConnected) return "WebSocket";
-        return "Offline";
-    };
 
     const updateStatus = () => {
         const peers = Math.max(awareness.getStates().size, 1);
@@ -346,7 +528,7 @@ function initCollaboration(room) {
 }
 
 function initQuill(ytext, awareness) {
-    const editorContainer = document.getElementById("editor");
+    const editorContainer = $("#editor");
     const quill = new Quill(editorContainer, {
         modules: {
             cursors: true,
@@ -379,11 +561,11 @@ function attachEventListeners() {
         }
         applyInstruction(text);
     });
-    document.getElementById("btn-save-settings").addEventListener("click", () => {
-        state.apiKey = document.getElementById("api-key").value.trim();
-        state.baseUrl = document.getElementById("base-url").value.trim() || "https://llmfoundry.straive.com/openai/v1";
-        state.model = document.getElementById("model-name").value.trim() || "gpt-4o-mini";
-        const rawSignaling = document.getElementById("signaling-servers")?.value || "";
+    $("#btn-save-settings").addEventListener("click", () => {
+        state.apiKey = $("#api-key").value.trim();
+        state.baseUrl = $("#base-url").value.trim() || "https://llmfoundry.straive.com/openai/v1";
+        state.model = $("#model-name").value.trim() || "gpt-4o-mini";
+        const rawSignaling = $("#signaling-servers")?.value || "";
         const nextSignaling = normalizeSignalingList(rawSignaling);
         const prevSignature = (state.signaling || []).join("|");
         const nextSignature = nextSignaling.join("|");
@@ -430,8 +612,6 @@ function handleUpload(event) {
         });
 }
 
-// Dataset and History render functions removed
-
 function replaceDocumentText(nextText, origin = "manual") {
     if (!state.ydoc || !state.ytext) return;
     state.ydoc.transact(() => {
@@ -475,7 +655,6 @@ async function applyInstruction(instruction) {
         state.isAiTyping = false;
         applyBtn.disabled = false;
         applyBtn.innerHTML = '<i class="bi bi-stars"></i> Apply Instruction';
-        // updateAgentCursor(agentId, null); // Keep cursor visible
     }
 }
 
@@ -486,10 +665,6 @@ async function runAgentAi(agentId, promptObj, section) {
     agentManager.updateAgentLog(agentId, "Reading document...");
     const instruction = promptObj.instruction;
     const currentText = state.ytext.toString();
-
-    // Check for section context
-    // If section string provided (e.g. "Section 6"), we could narrow context, 
-    // but for now we pass full doc and instruction.
 
     agentManager.updateAgentLog(agentId, "Querying LLM...");
     if (state.apiKey) {
@@ -521,12 +696,8 @@ async function runMockAiTask(agentId, name, color, instruction) {
         target = "Development Resources: 3 Full-stack Engineers";
         replacement = "Development Resources: 3 Full-stack Engineers, 1 AI Specialist, +10% Contingency";
     } else if (text.includes("name") && text.includes("update")) {
-        // "Update name to Pavan"
-        // Extract name 
         const match = instruction.match(/name to\s+([^\s]+)/i);
         const newName = match ? match[1] : "Pavan";
-
-        // Try to find placeholders in Commercial Lease
         if (state.ytext.toString().includes("[TENANT_NAME]")) {
             target = "[TENANT_NAME]";
             replacement = newName;
@@ -553,9 +724,6 @@ async function runMockAiTask(agentId, name, color, instruction) {
         }
         return;
     }
-
-    // Generic heuristic if target is "END_OF_DOC" was removed.
-    // We only edit if we found a valid target.
 
     if (target) {
         agentManager.updateAgentLog(agentId, `Found match: "${target.slice(0, 20)}..."`);
@@ -606,16 +774,8 @@ Example: Request "Fix headers and update dates" -> tasks: [{ "role": "Formatter"
     }
 
     // 2. Mock / Fallback (Single Agent)
-    const agentId = `manual-ai-${state.userNumber || "guest"}`;
     const agentName = `${state.userName || "User"} (AI)`;
     const agentColor = state.aiColor;
-
-    // We manually spawn a "Manager" agent first to show activity? 
-    // Actually, applyInstruction calls runs directly. 
-    // But to support "multiagents work parallel", we should preferably use spawnAgent even for manual override?
-    // The previous logic used 'runLiveAiTask' directly without spawning a card.
-    // Let's change Manual Override to ALWAYS spawn an agent card! 
-    // This unifies the UX.
 
     agentManager.spawnAgent(agentName, "Manual Override", agentColor, { label: "Manual Instruction", instruction: instruction }, "General");
 }
@@ -709,7 +869,6 @@ async function simulateStreamingEdit(target, textToType, agentId, name, color, c
         const current = state.ytext.toString();
         index = current.indexOf(target);
         if (index === -1) {
-            // Target not found
             return;
         }
         // Delete target first
@@ -734,7 +893,6 @@ async function simulateStreamingEdit(target, textToType, agentId, name, color, c
         }
         await wait(20);
     }
-    // updateAgentCursor(agentId, null);
 }
 
 async function applyOperations(operations, agentId, name, color) {
@@ -746,6 +904,9 @@ async function applyOperations(operations, agentId, name, color) {
         const current = state.ytext.toString();
         const idx = current.indexOf(match);
         if (idx === -1) continue;
+
+        // Log the action
+        updateActivityLog(`${name} replacing "${match.slice(0, 15)}..."`, "info");
 
         // Visual Highlight
         updateAgentCursor(agentId, idx, match.length, name, color);
@@ -770,15 +931,10 @@ async function applyOperations(operations, agentId, name, color) {
             }, agentId);
         }
     }
-    // updateAgentCursor(agentId, null);
 }
 
 async function applySmartDiffV2(oldText, newText, agentId, name, color) {
     const changes = diff(oldText, newText);
-    let scanIndex = 0;
-
-    // Similar logic to legacy, but using agent cursor
-    // ... simplified loop ...
     let headAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, 0);
 
     for (const [action, chunk] of changes) {
@@ -817,7 +973,6 @@ async function applySmartDiffV2(oldText, newText, agentId, name, color) {
             }
         }
     }
-    // updateAgentCursor(agentId, null);
 }
 
 function updateAgentCursor(agentId, position, length = 0, name = "AI", color = "#8b5cf6", isRemote = false) {
@@ -888,10 +1043,6 @@ function setupAgentCursorSync() {
     // 1. Observe Map Changes (Remote Updates)
     cursorsMap.observe((event) => {
         if (event.transaction.origin === "agent-cursor-sync") return; // Ignore our own sync ops
-
-        // We can just call refreshCursors to be safe and simple, 
-        // or optimize. Since this runs on every remote keystroke (if they broadcast),
-        // let's just trigger refreshCursors() which is robust.
         refreshCursors();
     });
 
@@ -902,15 +1053,12 @@ function setupAgentCursorSync() {
     });
 }
 
-// Cursor synchronization helpers for AI are now handled by AgentManager logic locally.
-// Future: propagate agent cursors via Awareness if needed for multi-user visibility.
-
 function askForConfirmation() {
     return new Promise((resolve) => {
-        const modalEl = document.getElementById("conflictModal");
+        const modalEl = $("#conflictModal");
         const modal = new bootstrap.Modal(modalEl);
-        const acceptBtn = document.getElementById("btn-accept-conflict");
-        const rejectBtn = document.getElementById("btn-reject-conflict");
+        const acceptBtn = $("#btn-accept-conflict");
+        const rejectBtn = $("#btn-reject-conflict");
 
         const cleanup = () => {
             acceptBtn.removeEventListener("click", onAccept);
@@ -940,8 +1088,8 @@ function wait(ms) {
 }
 
 function showToast(message, isError = false) {
-    const toastEl = document.getElementById("liveToast");
-    const toastBody = document.getElementById("toast-message");
+    const toastEl = $("#liveToast");
+    const toastBody = $("#toast-message");
     const toastHeader = toastEl.querySelector(".toast-header strong");
     toastBody.textContent = message;
     toastHeader.textContent = isError ? "Error" : "Notification";
@@ -950,3 +1098,4 @@ function showToast(message, isError = false) {
     toast.show();
 }
 window.showToast = showToast;
+console.log("Parallel Edit Script Loaded");

@@ -99,7 +99,8 @@ export class AgentManager {
                 el.id = `card-${agent.id}`;
                 el.className = "card mb-2 shadow-sm border-0";
                 el.innerHTML = this.getAgentTemplate(agent);
-                this.container.appendChild(el);
+                // DESCENDING ORDER: Newest first
+                this.container.prepend(el);
             } else {
                 // Update status only
                 const statusEl = el.querySelector(".agent-status-badge");
@@ -117,22 +118,22 @@ export class AgentManager {
     }
 
     getAgentTemplate(agent) {
-        const borderStyle = `border-left: 4px solid ${agent.color} !important;`;
+        const borderStyle = `border-left: 3px solid ${agent.color} !important;`;
         return `
             <div class="card-body p-2" style="${borderStyle}">
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <div>
-                        <strong style="color:${agent.color}">${agent.name}</strong>
-                        <span class="text-muted small ms-1">(${agent.role})</span>
+                    <div style="line-height: 1.2;">
+                        <strong style="color:${agent.color}; font-size: 0.75rem;">${agent.name}</strong>
+                        <span class="text-muted" style="font-size: 0.7rem;">(${agent.role})</span>
                     </div>
-                    <div class="agent-status-badge">${this.getStatusHtml(agent.status)}</div>
+                    <div class="agent-status-badge scale-90" style="transform-origin: right center;">${this.getStatusHtml(agent.status)}</div>
                 </div>
-                <div class="text-xs text-muted mb-2 text-truncate">
+                <div class="text-muted mb-1 text-truncate" style="font-size: 0.65rem;">
                     Target: <strong>${agent.section}</strong>
                 </div>
-                <div class="bg-dark text-success p-2 rounded text-xs font-monospace" 
+                <div class="bg-dark text-success p-1 rounded font-monospace" 
                      id="log-${agent.id}" 
-                     style="height: 60px; overflow-y: auto;">
+                     style="height: 50px; overflow-y: auto; font-size: 0.65rem; line-height: 1.3;">
                     ${agent.logs.map(l => `<div class="text-truncate">> ${l}</div>`).join("")}
                 </div>
             </div>

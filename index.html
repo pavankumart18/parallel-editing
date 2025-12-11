@@ -10,74 +10,109 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <!-- Highlight.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+
     <!-- Quill CSS -->
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/quill-cursors@3.0.0/dist/quill-cursors.css" rel="stylesheet">
+
     <!-- Google Fonts -->
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Merriweather:wght@300;400;700&display=swap"
         rel="stylesheet">
+
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=6">
 </head>
 
 <body>
 
     <div class="app-container">
-        <!-- Top Navigation Bar -->
-        <header class="top-bar">
-            <div class="d-flex align-items-center gap-3">
-                <div class="d-flex align-items-center gap-2">
-                    <i class="bi bi-vector-pen text-primary fs-4"></i>
-                    <h5 class="mb-0 fw-bold">Parallel<span class="text-primary">Edit</span></h5>
-                </div>
-                <div class="vr mx-2"></div>
+        <!-- Top Navigation Bar (Dark Theme per Guidelines) -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark top-bar border-bottom border-secondary">
+            <div class="container-fluid">
+                <!-- Brand (Always Visible) -->
+                <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+                    <i class="bi bi-vector-pen text-warning fs-4"></i>
+                    <h5 class="mb-0 fw-bold">Parallel<span class="text-warning">Edit</span></h5>
+                </a>
 
-                <!-- User Name Input -->
-                <div class="input-group input-group-sm" style="width: 200px;">
-                    <span class="input-group-text"><i class="bi bi-person"></i></span>
-                    <input type="text" id="user-name-input" class="form-control" placeholder="Your Name">
-                </div>
+                <!-- Toggler for Mobile -->
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent"
+                    aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
 
-                <div id="connection-status" class="status-badge text-secondary border-secondary">
-                    <span class="ai-mock-indicator" style="background-color: #cbd5e1;"></span> Connecting...
-                </div>
-                <div id="ai-mode-status" class="status-badge">
-                    <span class="ai-mock-indicator"></span> Mock AI Mode
-                </div>
-                <div class="status-badge">
-                    <i class="bi bi-people me-1"></i>
-                    <span id="collaborator-count">1</span> online
-                </div>
-                <div class="status-badge">
-                    <i class="bi bi-hash me-1"></i>
-                    <span id="room-name">room</span>
+                <!-- Collapsible Content -->
+                <div class="collapse navbar-collapse" id="navbarContent">
+
+                    <!-- User Profile & Status (Left/Center) -->
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0 align-items-lg-center gap-2 mt-2 mt-lg-0">
+                        <li class="nav-item">
+                            <div class="input-group input-group-sm" style="width: 200px;">
+                                <span class="input-group-text bg-secondary text-white border-secondary"><i
+                                        class="bi bi-person"></i></span>
+                                <input type="text" id="user-name-input"
+                                    class="form-control bg-dark text-white border-secondary" placeholder="Your Name">
+                            </div>
+                        </li>
+                        <li class="nav-item">
+                            <div class="vr mx-2 text-secondary d-none d-lg-block" style="height: 24px;"></div>
+                        </li>
+                        <li class="nav-item d-flex flex-wrap gap-2">
+                            <div id="connection-status"
+                                class="status-badge text-light border-secondary bg-secondary bg-opacity-25">
+                                <span class="ai-mock-indicator" style="background-color: #cbd5e1;"></span> Connecting...
+                            </div>
+                            <div id="ai-mode-status"
+                                class="status-badge text-light border-secondary bg-secondary bg-opacity-25">
+                                <span class="ai-mock-indicator"></span> Mock Mode
+                            </div>
+                            <div class="status-badge text-light border-secondary bg-secondary bg-opacity-25">
+                                <i class="bi bi-people me-1"></i>
+                                <span id="collaborator-count">1</span>
+                            </div>
+                            <div class="status-badge text-light border-secondary bg-secondary bg-opacity-25 text-truncate"
+                                style="max-width: 150px;">
+                                <i class="bi bi-hash me-1"></i>
+                                <span id="room-name">room</span>
+                            </div>
+                        </li>
+                    </ul>
+
+                    <!-- Action Buttons (Right) -->
+                    <div class="d-flex align-items-center gap-2 mt-3 mt-lg-0 flex-wrap">
+                        <label for="file-upload" class="btn btn-outline-light btn-sm d-flex align-items-center gap-2">
+                            <i class="bi bi-upload"></i> <span class="d-none d-md-inline">Upload</span>
+                        </label>
+                        <input type="file" id="file-upload" accept=".txt,.md,.doc,.docx,.pdf" hidden>
+
+                        <button id="btn-share" class="btn btn-outline-warning btn-sm d-flex align-items-center gap-2">
+                            <i class="bi bi-share"></i> <span class="d-none d-md-inline">Share</span>
+                        </button>
+                        <button id="btn-template" class="btn btn-outline-light btn-sm d-flex align-items-center gap-2">
+                            <i class="bi bi-file-earmark-text"></i> <span class="d-none d-md-inline">Template</span>
+                        </button>
+                        <button id="btn-settings" class="btn btn-outline-light btn-sm" data-bs-toggle="modal"
+                            data-bs-target="#settingsModal">
+                            <i class="bi bi-gear"></i>
+                        </button>
+                        <!-- Theme Toggle -->
+                        <button id="btn-theme-toggle" class="btn btn-outline-light btn-sm">
+                            <i class="bi bi-moon-stars-fill" id="theme-icon"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
-
-            <div class="d-flex align-items-center gap-2">
-                <label for="file-upload" class="btn btn-outline-secondary btn-sm mb-0 d-flex align-items-center gap-1">
-                    <i class="bi bi-upload"></i> Upload
-                </label>
-                <input type="file" id="file-upload" accept=".txt,.md,.doc,.docx,.pdf" hidden>
-                <button id="btn-share" class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-share"></i> Share
-                </button>
-                <button id="btn-template" class="btn btn-outline-secondary btn-sm">
-                    <i class="bi bi-file-earmark-text me-1"></i> Load Template
-                </button>
-                <button id="btn-settings" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
-                    data-bs-target="#settingsModal">
-                    <i class="bi bi-gear me-1"></i> Settings
-                </button>
-            </div>
-        </header>
+        </nav>
 
         <!-- Demo Docs Top Bar -->
-        <div class="demo-bar bg-body-tertiary border-bottom px-4 py-2 d-flex align-items-center gap-3 overflow-x-auto"
+        <div class="demo-bar bg-body border-bottom px-4 py-2 d-flex align-items-center gap-3 overflow-x-auto"
             style="white-space: nowrap; min-height: 80px;">
-            <h6 class="fw-bold mb-0 text-uppercase text-secondary small me-2 flex-shrink-0"><i
-                    class="bi bi-collection-play me-2 text-primary"></i>Demo Docs</h6>
+            <h6 class="fw-bold mb-0 text-uppercase text-secondary small me-2 flex-shrink-0">
+                <i class="bi bi-collection-play me-2 text-primary"></i>Demo Docs
+            </h6>
             <div id="demo-docs-list" class="d-flex align-items-center gap-3 flex-grow-1">
                 <!-- Docs will be rendered here horizontally -->
             </div>
@@ -87,52 +122,78 @@
         <div class="main-content">
             <!-- Editor Section -->
             <div class="editor-container">
+                <!-- NEW: Agent Prompts Bar (Horizontal) -->
+                <div id="agent-prompts-bar"
+                    class="d-flex align-items-center gap-2 px-4 py-2 bg-body-tertiary border-bottom overflow-x-auto"
+                    style="min-height: 50px; white-space: nowrap;">
+                    <span class="badge bg-secondary opacity-50 fw-normal">Select a doc...</span>
+                </div>
                 <div id="editor"></div>
             </div>
 
             <!-- AI Sidebar -->
-            <aside class="sidebar premium-shadow d-flex flex-column h-100">
-                <!-- 2. Actions / Prompts for Selected Doc (Now Top Section of Sidebar) -->
-                <div id="demo-actions-container" class="sidebar-section border-bottom p-3 bg-body-tertiary"
-                    style="min-height: 120px; flex-shrink: 0;">
-                    <div class="text-center text-muted small py-3">Select a document above...</div>
-                </div>
+            <aside class="sidebar premium-shadow d-flex flex-column h-100 border-start">
 
-
-                <!-- 3. Live Agents Header -->
-                <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-white">
-                    <h6 class="fw-bold mb-0 small text-uppercase text-secondary"><i
-                            class="bi bi-activity me-2 text-success"></i>Live Agents</h6>
-                    <span class="badge bg-secondary rounded-pill" id="agent-count">0</span>
-                </div>
-
-                <!-- 4. Agents List (Scrollable) -->
-                <div id="agents-container" class="p-3 flex-grow-1 overflow-y-auto bg-white" style="min-height: 0;">
-                    <!-- Agent items will be injected here -->
-                    <div class="text-center text-muted mt-4 small">
-                        <i class="bi bi-robot fs-3 d-block mb-2 opacity-50"></i>
-                        Waiting for task...
-                    </div>
-                </div>
-
-                <!-- 5. Manual Input Footer (Fixed Bottom) -->
-                <div class="p-3 border-top bg-white" style="z-index: 10;">
+                <!-- Manual Input Footer (Moved to Top) -->
+                <div class="p-3 border-bottom bg-body" style="z-index: 10;">
                     <label for="ai-instruction"
-                        class="form-label text-xs fw-bold text-uppercase text-secondary mb-1">Manual Override (AI
-                        Manager)</label>
-                    <div class="d-flex flex-column gap-2">
-                        <textarea id="ai-instruction" class="form-control form-control-sm" rows="4"
-                            placeholder="Type detailed instructions here... (e.g., 'Review section 5 and add a clause about remote work')"></textarea>
+                        class="form-label text-xs fw-bold text-uppercase text-secondary mb-1">Manual Override</label>
+                    <div class="d-flex flex-column gap-2 mb-3">
+                        <textarea id="ai-instruction" class="form-control form-control-sm" rows="3"
+                            placeholder="Type instructions here..."></textarea>
                         <button class="btn btn-primary w-100 py-2 fw-bold" id="btn-apply-ai">
                             <i class="bi bi-stars me-2"></i>Apply Instruction
                         </button>
+                    </div>
+
+                    <!-- Activity Log (New) -->
+                    <div class="border-top pt-3">
+                        <h6 class="fw-bold mb-2 text-uppercase text-secondary" style="font-size: 0.7rem;">Activity Log
+                        </h6>
+                        <div id="activity-log" class="bg-body-tertiary border rounded p-2 overflow-y-auto"
+                            style="height: 100px; font-size: 0.75rem; font-family: monospace;">
+                            <div class="text-muted fst-italic">System initialized...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Agents Header -->
+                <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-body">
+                    <h6 class="fw-bold mb-0 small text-uppercase text-secondary">
+                        <i class="bi bi-activity me-2 text-success"></i>Live Agents
+                    </h6>
+                    <span class="badge bg-secondary rounded-pill" id="agent-count">0</span>
+                </div>
+
+                <!-- Agents List -->
+                <div id="agents-container" class="p-3 flex-grow-1 overflow-y-auto bg-body position-relative"
+                    style="min-height: 0;">
+                    <div class="text-center text-muted mt-4 small">
+                        <i class="bi bi-robot fs-3 d-block mb-2 opacity-50"></i>
+                        Waiting for task...
                     </div>
                 </div>
             </aside>
         </div>
     </div>
 
-    <!-- Info Panels Removed -->
+    <!-- Templates Modal (New Grid UI) -->
+    <div class="modal fade" id="templatesModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content bg-light">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold text-secondary text-uppercase small"><i
+                            class="bi bi-grid-fill me-2"></i>Select a Template</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div id="templates-grid" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+                        <!-- Templates injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Settings Modal -->
     <div class="modal fade" id="settingsModal" tabindex="-1">
@@ -163,11 +224,8 @@
                             <label class="form-label">WebRTC Signaling Servers</label>
                             <textarea id="signaling-servers" class="form-control" rows="3"
                                 placeholder="One wss:// URL per line"></textarea>
-                            <div class="form-text">
-                                Use your own relays if the default Yjs servers are blocked on your network.
-                            </div>
+                            <div class="form-text">Use custom relays if needed.</div>
                         </div>
-
                     </form>
                 </div>
                 <div class="modal-footer">
@@ -178,56 +236,30 @@
         </div>
     </div>
 
-    <!-- Conflict/Confirmation Modal -->
-    <div class="modal fade" id="conflictModal" tabindex="-1" data-bs-backdrop="static">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border-warning">
-                <div class="modal-header bg-warning-subtle">
-                    <h5 class="modal-title text-warning-emphasis"><i
-                            class="bi bi-exclamation-triangle-fill me-2"></i>Edit Conflict Detected</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p>The AI is attempting to edit the same section you are currently working on.</p>
-                    <p class="mb-0 text-muted small">Do you want to accept the AI's changes and overwrite this section?
-                    </p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
-                        id="btn-reject-conflict">Discard AI Edit</button>
-                    <button type="button" class="btn btn-warning text-dark fw-bold" id="btn-accept-conflict">Accept
-                        Changes</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toasts Container -->
+    <!-- Toast -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3">
-        <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div id="liveToast" class="toast" role="alert">
             <div class="toast-header">
                 <i class="bi bi-info-circle-fill text-primary me-2"></i>
                 <strong class="me-auto">Notification</strong>
-                <small>Just now</small>
-                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
             </div>
-            <div class="toast-body" id="toast-message">
-                Hello, world! This is a toast message.
-            </div>
+            <div class="toast-body" id="toast-message"></div>
         </div>
     </div>
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-    <!-- Modules -->
+    <!-- Highlight JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
     <!-- Modules -->
     <script type="importmap">
     {
         "imports": {
             "yjs": "https://esm.sh/yjs@13",
             "y-webrtc": "https://esm.sh/y-webrtc@10?external=yjs",
-
             "y-quill": "https://esm.sh/y-quill?external=yjs,quill",
             "quill": "https://esm.sh/quill@1.3.6",
             "quill-cursors": "https://esm.sh/quill-cursors@3.0.0?external=quill",
