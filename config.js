@@ -1,10 +1,18 @@
+const DEFAULT_SIGNALING = [
+  "wss://signaling.yjs.dev",
+  "wss://y-webrtc-signaling-eu.herokuapp.com",
+  "wss://y-webrtc-signaling-us.herokuapp.com",
+  "wss://signaling-server-2s0k.onrender.com",
+  "wss://y-webrtc.fly.dev",
+];
+
 export const DOCUMENTS = [
-    {
-        id: "doc_commercial_lease",
-        title: "Commercial Lease Agreement",
-        description: "Standard commercial lease with liability clauses.",
-        icon: "bi-building",
-        content: `COMMERCIAL LEASE AGREEMENT
+  {
+    id: "doc_commercial_lease",
+    title: "Commercial Lease Agreement",
+    description: "Standard commercial lease with liability clauses.",
+    icon: "bi-building",
+    content: `COMMERCIAL LEASE AGREEMENT
 
 This Commercial Lease Agreement (the "Lease") is made and effective as of [DATE], by and between [LANDLORD_NAME] ("Landlord") and [TENANT_NAME] ("Tenant").
 
@@ -43,31 +51,34 @@ Landlord Signature
 
 __________________________
 Tenant Signature
-`.repeat(10), // Increased to ensure ~3 pages
-        prompts: [
-            {
-                label: "Strengthen Liability Clauses",
-                instruction: "Review Section 6 (Insurance and Indemnification). Increase the liability insurance limit to $5,000,000 and add a clause requiring the Tenant to name the Landlord as an additional insured.",
-                section: "Section 6"
-            },
-            {
-                label: "Clarify Maintenance Duties",
-                instruction: "Expand Section 5 to explicitly state that the Tenant is responsible for HVAC maintenance and replacement if caused by Tenant's negligence.",
-                section: "Section 5"
-            },
-            {
-                label: "Adjust Rent Terms",
-                instruction: "Modify Section 3 to include an annual rent escalation of 3% occurring on the anniversary of the commencement date.",
-                section: "Section 3"
-            }
-        ]
-    },
-    {
-        id: "doc_tech_policy",
-        title: "IT Security & Acceptable Use Policy",
-        description: "Enterprise acceptable use policy for employees.",
-        icon: "bi-shield-lock",
-        content: `IT SECURITY AND ACCEPTABLE USE POLICY
+`.repeat(10),
+    prompts: [
+      {
+        label: "Strengthen Liability Clauses",
+        instruction:
+          "Review Section 6 (Insurance and Indemnification). Increase the liability insurance limit to $5,000,000 and add a clause requiring the Tenant to name the Landlord as an additional insured.",
+        section: "Section 6",
+      },
+      {
+        label: "Clarify Maintenance Duties",
+        instruction:
+          "Expand Section 5 to explicitly state that the Tenant is responsible for HVAC maintenance and replacement if caused by Tenant's negligence.",
+        section: "Section 5",
+      },
+      {
+        label: "Adjust Rent Terms",
+        instruction:
+          "Modify Section 3 to include an annual rent escalation of 3% occurring on the anniversary of the commencement date.",
+        section: "Section 3",
+      },
+    ],
+  },
+  {
+    id: "doc_tech_policy",
+    title: "IT Security & Acceptable Use Policy",
+    description: "Enterprise acceptable use policy for employees.",
+    icon: "bi-shield-lock",
+    content: `IT SECURITY AND ACCEPTABLE USE POLICY
 
 1. OVERVIEW
 This policy outlines the acceptable use of computer equipment at [COMPANY_NAME]. These rules are in place to protect the employee and [COMPANY_NAME]. Inappropriate use exposes [COMPANY_NAME] to risks including virus attacks, compromise of network systems and services, and legal issues.
@@ -98,30 +109,33 @@ Any employee found to have violated this policy may be subject to disciplinary a
 [COMPANY_NAME] reserves the right to revise this policy at any time.
 
 `.repeat(12),
-        prompts: [
-            {
-                label: "Harden Password Rules",
-                instruction: "Update Section 4 to mandate Multi-Factor Authentication (MFA) for all remote access and change the screensaver lock timeout to 5 minutes.",
-                section: "Section 4"
-            },
-            {
-                label: "Clarify Personal Usage",
-                instruction: "Rewrite Section 6 to strictly prohibit the use of company resources for any crypto-currency mining or commercial activities outside of company business.",
-                section: "Section 6"
-            },
-            {
-                label: "Expand Scope",
-                instruction: "Update Section 2 to explicitly include 'Internet of Things (IoT) devices' and 'BYOD (Bring Your Own Device)' mobile phones.",
-                section: "Section 2"
-            }
-        ]
-    },
-    {
-        id: "doc_project_proposal",
-        title: "AI Implementation Project Proposal",
-        description: "Proposal for integrating GenAI into workflows.",
-        icon: "bi-cpu",
-        content: `PROJECT PROPOSAL: GENERATIVE AI INTEGRATION
+    prompts: [
+      {
+        label: "Harden Password Rules",
+        instruction:
+          "Update Section 4 to mandate Multi-Factor Authentication (MFA) for all remote access and change the screensaver lock timeout to 5 minutes.",
+        section: "Section 4",
+      },
+      {
+        label: "Clarify Personal Usage",
+        instruction:
+          "Rewrite Section 6 to strictly prohibit the use of company resources for any crypto-currency mining or commercial activities outside of company business.",
+        section: "Section 6",
+      },
+      {
+        label: "Expand Scope",
+        instruction:
+          "Update Section 2 to explicitly include 'Internet of Things (IoT) devices' and 'BYOD (Bring Your Own Device)' mobile phones.",
+        section: "Section 2",
+      },
+    ],
+  },
+  {
+    id: "doc_project_proposal",
+    title: "AI Implementation Project Proposal",
+    description: "Proposal for integrating GenAI into workflows.",
+    icon: "bi-cpu",
+    content: `PROJECT PROPOSAL: GENERATIVE AI INTEGRATION
 
 1. EXECUTIVE SUMMARY
 The purpose of this project is to integrate Generative AI (GenAI) models into our core customer support platform. By doing so, we aim to reduce response times by 40% and increase customer satisfaction scores (CSAT) by 15 points within Q1 2026.
@@ -159,30 +173,33 @@ Phase 3: Autonomous Chatbot for Tier 1 Issues
 8. CONCLUSION
 Investing in this technology is crucial for maintaining competitive advantage. The ROI is expected to be realized within 8 months of deployment.
 `.repeat(10),
-        prompts: [
-            {
-                label: "Refine Budget Section",
-                instruction: "In Section 6, break down the 'Development Resources' costs in more detail and add a 10% contingency buffer to the total budget.",
-                section: "Section 6"
-            },
-            {
-                label: "Elaborate on Risks",
-                instruction: "Expand Section 7 to include data privacy risks (GDPR/CCPA) and propose a mitigation strategy involving data anonymization.",
-                section: "Section 7"
-            },
-            {
-                label: "Update Tech Stack",
-                instruction: "Change the Vector Database in Section 4 to 'Weaviate' and add 'Redis' for caching frequent queries.",
-                section: "Section 4"
-            }
-        ]
-    },
-    {
-        id: "doc_launch_strategy",
-        title: "Product Launch Strategy",
-        description: "GTM plan for the new mobile application.",
-        icon: "bi-rocket-takeoff",
-        content: `PRODUCT LAUNCH STRATEGY: "APEX" MOBILE APP
+    prompts: [
+      {
+        label: "Refine Budget Section",
+        instruction:
+          "In Section 6, break down the 'Development Resources' costs in more detail and add a 10% contingency buffer to the total budget.",
+        section: "Section 6",
+      },
+      {
+        label: "Elaborate on Risks",
+        instruction:
+          "Expand Section 7 to include data privacy risks (GDPR/CCPA) and propose a mitigation strategy involving data anonymization.",
+        section: "Section 7",
+      },
+      {
+        label: "Update Tech Stack",
+        instruction:
+          "Change the Vector Database in Section 4 to 'Weaviate' and add 'Redis' for caching frequent queries.",
+        section: "Section 4",
+      },
+    ],
+  },
+  {
+    id: "doc_launch_strategy",
+    title: "Product Launch Strategy",
+    description: "GTM plan for the new mobile application.",
+    icon: "bi-rocket-takeoff",
+    content: `PRODUCT LAUNCH STRATEGY: "APEX" MOBILE APP
 
 1. LAUNCH OBJECTIVES
 Primary Goal: Achieve 10,000 active users within the first 30 days.
@@ -219,22 +236,89 @@ Secondary Goal: Maintain a 4.5-star rating on both App Store and Google Play.
 - Server overload on launch day.
 - Negative reviews due to initial bugs.
 `.repeat(8),
-        prompts: [
-            {
-                label: "Refine Pricing",
-                instruction: "In Section 4, add a 'Team Plan' tier for enterprise users at $49/month per seat.",
-                section: "Section 4"
-            },
-            {
-                label: "Expand Social Strategy",
-                instruction: "Update Section 3(a) to include LinkedIn Organic posts targeting professionals.",
-                section: "Section 3"
-            },
-            {
-                label: "Mitigate Risks",
-                instruction: "Add a mitigation plan in Section 8 for 'Server Overload' involving auto-scaling groups and a CDN.",
-                section: "Section 8"
-            }
-        ]
-    }
+    prompts: [
+      {
+        label: "Refine Pricing",
+        instruction: "In Section 4, add a 'Team Plan' tier for enterprise users at $49/month per seat.",
+        section: "Section 4",
+      },
+      {
+        label: "Expand Social Strategy",
+        instruction: "Update Section 3(a) to include LinkedIn Organic posts targeting professionals.",
+        section: "Section 3",
+      },
+      {
+        label: "Mitigate Risks",
+        instruction:
+          "Add a mitigation plan in Section 8 for 'Server Overload' involving auto-scaling groups and a CDN.",
+        section: "Section 8",
+      },
+    ],
+  },
 ];
+
+const DEMO_CARDS = [
+  {
+    id: "lease-review",
+    title: "Lease Redlines",
+    summary: "3 curated prompts fortify liability, maintenance, and rent terms.",
+    badge: "Legal Ops",
+    docId: "doc_commercial_lease",
+    color: "#2563eb",
+  },
+  {
+    id: "security-hardening",
+    title: "Security Hardening",
+    summary: "Lock down MFA, clarify BYOD, and tighten personal use.",
+    badge: "IT Policy",
+    docId: "doc_tech_policy",
+    color: "#db2777",
+  },
+  {
+    id: "ai-rollout",
+    title: "AI Rollout Plan",
+    summary: "Budget, risk, and stack prompts to prep exec-ready drafts.",
+    badge: "PMO",
+    docId: "doc_project_proposal",
+    color: "#16a34a",
+  },
+  {
+    id: "apex-launch",
+    title: "Apex GTM",
+    summary: "Launch checklist with pricing, social, and risk controls.",
+    badge: "GTM",
+    docId: "doc_launch_strategy",
+    color: "#ca8a04",
+  },
+];
+
+export const APP_CONFIG = {
+  title: "Parallel Editing Agent Demo",
+  description: `Collaborative editing playground where humans and sandboxed AI agents co-draft long-form documents. 
+Pick a template, share the room URL, and orchestrate multiple focused AI workers to edit different sections in parallel without stepping on each other.
+
+The demo streams cursor intent, exposes manual overrides, and keeps the doc in sync across peers via Yjs + WebRTC.`,
+  heroScreenshot: "screenshot.webp",
+  defaults: {
+    roomParam: "room",
+    datasetParam: "dataset",
+    baseUrl: "https://llmfoundry.straive.com/openai/v1",
+    model: "gpt-4o-mini",
+    signaling: DEFAULT_SIGNALING,
+  },
+  datasets: [
+    {
+      id: "sample-documents",
+      title: "Sample Legal + GTM Corpus",
+      description: "Metadata used for the curated demo prompts. Helpful for quick benchmarking or offline reviews.",
+      file: "data/sample-documents.json",
+      size: "<12KB",
+    },
+  ],
+  demoCards: DEMO_CARDS,
+  documents: DOCUMENTS,
+};
+
+export const DATASETS = APP_CONFIG.datasets;
+export const DEFAULTS = APP_CONFIG.defaults;
+export const CARDS = APP_CONFIG.demoCards;

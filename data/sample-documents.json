@@ -1,0 +1,42 @@
+[
+  {
+    "id": "doc_commercial_lease",
+    "title": "Commercial Lease Agreement",
+    "category": "Legal Ops",
+    "lengthPages": 3,
+    "sections": ["Premises", "Term", "Rent", "Maintenance", "Insurance", "Default"],
+    "promptLabels": ["Strengthen Liability Clauses", "Clarify Maintenance Duties", "Adjust Rent Terms"]
+  },
+  {
+    "id": "doc_tech_policy",
+    "title": "IT Security & Acceptable Use Policy",
+    "category": "IT Compliance",
+    "lengthPages": 4,
+    "sections": [
+      "Overview",
+      "Scope",
+      "Use & Ownership",
+      "Security",
+      "Unacceptable Use",
+      "Personal Usage",
+      "Enforcement"
+    ],
+    "promptLabels": ["Harden Password Rules", "Clarify Personal Usage", "Expand Scope"]
+  },
+  {
+    "id": "doc_project_proposal",
+    "title": "AI Implementation Project Proposal",
+    "category": "PMO",
+    "lengthPages": 5,
+    "sections": ["Executive Summary", "Problem", "Solution", "Tech Stack", "Timeline", "Budget", "Risks"],
+    "promptLabels": ["Refine Budget Section", "Elaborate on Risks", "Update Tech Stack"]
+  },
+  {
+    "id": "doc_launch_strategy",
+    "title": "Product Launch Strategy",
+    "category": "GTM",
+    "lengthPages": 3,
+    "sections": ["Objectives", "Audience", "Channels", "Pricing", "Messaging", "Timeline", "Success Metrics", "Risks"],
+    "promptLabels": ["Refine Pricing", "Expand Social Strategy", "Mitigate Risks"]
+  }
+]
