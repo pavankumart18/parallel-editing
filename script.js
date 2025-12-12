@@ -66,7 +66,7 @@ const applyBtn = $("#btn-apply-ai");
 const instructionInput = $("#ai-instruction");
 const settingsForm = $("#settings-form");
 const settingsModalEl = $("#settingsModal");
-const settingsModal = new bootstrap.Modal(settingsModalEl);
+// const settingsModal = new bootstrap.Modal(settingsModalEl); // Removed global init to avoid conflicts
 
 const settings = loadSettings();
 hydrateSettingsForm();
@@ -295,7 +295,7 @@ function renderActions(doc, container) {
         btn.onclick = () => {
             // STRICT MODE: Check for LLM Config
             if (!state.apiKey || state.apiKey === "" || state.apiKey === "sk-...") {
-                const settingsModal = new bootstrap.Modal(document.getElementById('settingsModal'));
+                const settingsModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('settingsModal'));
                 settingsModal.show();
                 showToast("Please configure LLM API Key first!", true);
                 return;
@@ -533,10 +533,12 @@ function initQuill(ytext, awareness) {
         modules: {
             cursors: true,
             toolbar: [
-                [{ header: [1, 2, false] }],
-                ["bold", "italic", "underline"],
-                [{ list: "ordered" }, { list: "bullet" }],
-                ["clean"]
+                [{ header: [1, 2, 3, false] }],
+                ["bold", "italic", "underline", "strike"],
+                [{ color: [] }, { background: [] }],
+                [{ align: [] }],
+                [{ list: "ordered" }, { list: "bullet" }, { indent: "-1" }, { indent: "+1" }],
+                ["link", "image", "clean"]
             ]
         },
         placeholder: "Waiting for contract...",
@@ -555,6 +557,12 @@ function attachEventListeners() {
     uploadInput.addEventListener("change", handleUpload);
     applyBtn.addEventListener("click", () => {
         const text = instructionInput.value.trim();
+        if (!state.apiKey) {
+            const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('settingsModal'));
+            modal.show();
+            showToast("Please configure LLM API Key first!", true);
+            return;
+        }
         if (!text) {
             showToast("Enter an instruction first", true);
             return;
@@ -579,7 +587,11 @@ function attachEventListeners() {
 
         persistSettings();
         updateAiModeBadge();
-        settingsModal.hide();
+
+        // Robustly find and hide the modal
+        const modalInstance = bootstrap.Modal.getOrCreateInstance(document.getElementById('settingsModal'));
+        if (modalInstance) modalInstance.hide();
+
         const message = prevSignature !== nextSignature
             ? "Settings saved. Reload the tab to reconnect using the new signaling servers."
             : "Settings saved";
@@ -628,7 +640,7 @@ function updateAiModeBadge() {
     if (state.apiKey) {
         aiStatusEl.innerHTML = '<span class="ai-active-indicator"></span> Live AI Mode';
     } else {
-        aiStatusEl.innerHTML = '<span class="ai-mock-indicator"></span> Mock AI Mode';
+        aiStatusEl.innerHTML = '<span class="ai-mock-indicator"></span> Setup Required';
     }
 }
 
@@ -667,113 +679,58 @@ async function runAgentAi(agentId, promptObj, section) {
     const currentText = state.ytext.toString();
 
     agentManager.updateAgentLog(agentId, "Querying LLM...");
-    if (state.apiKey) {
-        await runLiveAiTask(agentId, agent.name, agent.color, instruction, (msg) => agentManager.updateAgentLog(agentId, msg));
-    } else {
-        await runMockAiTask(agentId, agent.name, agent.color, instruction);
+    agentManager.updateAgentLog(agentId, "Querying LLM...");
+
+    if (!state.apiKey) {
+        agentManager.updateAgentLog(agentId, "Error: No API Key configured.");
+        throw new Error("API Key missing");
     }
+
+    await runLiveAiTask(agentId, agent.name, agent.color, instruction, (msg) => agentManager.updateAgentLog(agentId, msg));
 }
 
-async function runMockAiTask(agentId, name, color, instruction) {
-    const text = instruction.toLowerCase();
-    await wait(800);
 
-    // Simple mock logic
-    let target = null;
-    let replacement = "";
-
-    // Heuristics based on common demo prompts & user input
-    if (text.includes("salary") || text.includes("compensation")) {
-        target = "[INSERT_SALARY]";
-        replacement = "$165,000";
-    } else if (text.includes("liability") || text.includes("insurance")) {
-        target = "limits of not less than $2,000,000";
-        replacement = "limits of not less than $5,000,000 (and naming Landlord as additional insured)";
-    } else if (text.includes("password")) {
-        target = "10 minutes or less";
-        replacement = "5 minutes or less, and requiring MFA";
-    } else if (text.includes("budget")) {
-        target = "Development Resources: 3 Full-stack Engineers";
-        replacement = "Development Resources: 3 Full-stack Engineers, 1 AI Specialist, +10% Contingency";
-    } else if (text.includes("name") && text.includes("update")) {
-        const match = instruction.match(/name to\s+([^\s]+)/i);
-        const newName = match ? match[1] : "Pavan";
-        if (state.ytext.toString().includes("[TENANT_NAME]")) {
-            target = "[TENANT_NAME]";
-            replacement = newName;
-        } else if (state.ytext.toString().includes("Tenant Name")) {
-            target = "Tenant Name";
-            replacement = newName;
-        }
-    } else if (text.includes("section 3") && text.includes("rent")) {
-        target = "payable in advance on the first day of each calendar month.";
-        replacement = "payable in advance on the first day of each calendar month, subject to an annual increase of 3% on the anniversary of the commencement date.";
-    }
-
-    // Fallback: If no heuristic match, DO NOT append to doc.
-    if (!target) {
-        agentManager.updateAgentLog(agentId, "Mock check: No specific edits found for this instruction.");
-        // Try to find user cursor to show we are "there" but don't edit
-        if (state.awareness) {
-            const localState = state.awareness.getLocalState();
-            if (localState && localState.cursor) {
-                // Flash cursor there
-                updateAgentCursor(agentId, localState.cursor.index, 0, name, color);
-                await wait(1000);
-            }
-        }
-        return;
-    }
-
-    if (target) {
-        agentManager.updateAgentLog(agentId, `Found match: "${target.slice(0, 20)}..."`);
-        await simulateStreamingEdit(target, replacement, agentId, name, color);
-        agentManager.updateAgentLog(agentId, "Edit complete.");
-    }
-}
 
 async function orchestrateAndSpawn(instruction) {
     // 1. Live AI Orchestration
-    if (state.apiKey) {
-        agentManager.updateAgentLog(`manual-ai-${state.userNumber}`, "Orchestrating plan...");
-        try {
-            const body = {
-                model: state.model,
-                temperature: 0.1,
-                messages: [
-                    {
-                        role: "system",
-                        content: `You are a Lead Editor. Break the user's request into 1 to 3 distinct sub-tasks for different specialists. 
+    agentManager.updateAgentLog(`manual-ai-${state.userNumber}`, "Orchestrating plan...");
+    try {
+        const body = {
+            model: state.model,
+            temperature: 0.1,
+            messages: [
+                {
+                    role: "system",
+                    content: `You are a Lead Editor. Break the user's request into 1 to 3 distinct sub-tasks for different specialists. 
 RETURN JSON: { "tasks": [{ "role": "string", "name": "string", "instruction": "string", "section_context": "string" }] }.
 Example: Request "Fix headers and update dates" -> tasks: [{ "role": "Formatter", "instruction": "Fix headers", "section_context": "Header" }, { "role": "Clerk", "instruction": "Update dates", "section_context": "Dates" }]`
-                    },
-                    { role: "user", content: instruction }
-                ],
-                response_format: { type: "json_object" }
-            };
+                },
+                { role: "user", content: instruction }
+            ],
+            response_format: { type: "json_object" }
+        };
 
-            const res = await fetch(`${state.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.apiKey}` },
-                body: JSON.stringify(body)
+        const res = await fetch(`${state.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.apiKey}` },
+            body: JSON.stringify(body)
+        });
+
+        const data = await res.json();
+        const plan = JSON.parse(data.choices[0].message.content);
+
+        if (plan.tasks && plan.tasks.length > 0) {
+            // Spawn parallel agents
+            plan.tasks.forEach(task => {
+                agentManager.spawnAgent(`${task.name} (${state.userName})`, task.role, deriveAiColor(task.role), { label: "Manual Task", instruction: task.instruction }, task.section_context);
             });
-
-            const data = await res.json();
-            const plan = JSON.parse(data.choices[0].message.content);
-
-            if (plan.tasks && plan.tasks.length > 0) {
-                // Spawn parallel agents
-                plan.tasks.forEach(task => {
-                    agentManager.spawnAgent(`${task.name} (${state.userName})`, task.role, deriveAiColor(task.role), { label: "Manual Task", instruction: task.instruction }, task.section_context);
-                });
-                return;
-            }
-        } catch (e) {
-            console.warn("Orchestration failed, falling back to single agent", e);
+            return;
         }
+    } catch (e) {
+        console.warn("Orchestration failed, falling back to single agent", e);
     }
 
-    // 2. Mock / Fallback (Single Agent)
+    // 2. Fallback (Single Agent)
     const agentName = `${state.userName || "User"} (AI)`;
     const agentColor = state.aiColor;
 
@@ -857,43 +814,7 @@ async function runLiveAiTask(agentId, name, color, instruction, logFn) {
     }
 }
 
-async function simulateStreamingEdit(target, textToType, agentId, name, color, cleanInsertIndex = null) {
-    const docLength = state.ytext.length;
-    let index = 0;
 
-    if (cleanInsertIndex !== null) {
-        index = cleanInsertIndex;
-    } else if (target === "END_OF_DOC") {
-        index = docLength;
-    } else if (target) {
-        const current = state.ytext.toString();
-        index = current.indexOf(target);
-        if (index === -1) {
-            return;
-        }
-        // Delete target first
-        updateAgentCursor(agentId, index, target.length, name, color);
-        await wait(500);
-        state.ydoc.transact(() => {
-            state.ytext.delete(index, target.length);
-        }, agentId); // Use agentId as origin
-    }
-
-    let relPos = Y.createRelativePositionFromTypeIndex(state.ytext, index);
-
-    // Type replacement
-    for (const char of textToType) {
-        const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
-        if (absPos) {
-            updateAgentCursor(agentId, absPos.index, 1, name, color);
-            state.ydoc.transact(() => {
-                state.ytext.insert(absPos.index, char);
-            }, agentId);
-            relPos = Y.createRelativePositionFromTypeIndex(state.ytext, absPos.index + 1);
-        }
-        await wait(20);
-    }
-}
 
 async function applyOperations(operations, agentId, name, color) {
     for (const op of operations) {

@@ -43,7 +43,7 @@ Landlord Signature
 
 __________________________
 Tenant Signature
-`.repeat(3), // Making it long
+`.repeat(10), // Increased to ensure ~3 pages
         prompts: [
             {
                 label: "Strengthen Liability Clauses",
@@ -97,7 +97,7 @@ Any employee found to have violated this policy may be subject to disciplinary a
 8. REVISIONS
 [COMPANY_NAME] reserves the right to revise this policy at any time.
 
-`.repeat(4),
+`.repeat(12),
         prompts: [
             {
                 label: "Harden Password Rules",
@@ -158,7 +158,7 @@ Phase 3: Autonomous Chatbot for Tier 1 Issues
 
 8. CONCLUSION
 Investing in this technology is crucial for maintaining competitive advantage. The ROI is expected to be realized within 8 months of deployment.
-`.repeat(3),
+`.repeat(10),
         prompts: [
             {
                 label: "Refine Budget Section",
@@ -174,6 +174,66 @@ Investing in this technology is crucial for maintaining competitive advantage. T
                 label: "Update Tech Stack",
                 instruction: "Change the Vector Database in Section 4 to 'Weaviate' and add 'Redis' for caching frequent queries.",
                 section: "Section 4"
+            }
+        ]
+    },
+    {
+        id: "doc_launch_strategy",
+        title: "Product Launch Strategy",
+        description: "GTM plan for the new mobile application.",
+        icon: "bi-rocket-takeoff",
+        content: `PRODUCT LAUNCH STRATEGY: "APEX" MOBILE APP
+
+1. LAUNCH OBJECTIVES
+Primary Goal: Achieve 10,000 active users within the first 30 days.
+Secondary Goal: Maintain a 4.5-star rating on both App Store and Google Play.
+
+2. TARGET AUDIENCE
+- Primary: Gen Z and Millennials aged 18-35 interested in productivity.
+- Secondary: Remote workers and digital nomads.
+
+3. MARKETING CHANNELS
+(a) Social Media. focus on TikTok and Instagram Reels showing use cases.
+(b) Influencer Partnerships. Partner with 5 key productivity influencers.
+(c) Email Marketing. Drip campaign to existing newsletter subscribers.
+
+4. PRICING STRATEGY
+- Freemium Model: Basic features free, Premium features at $9.99/month.
+- Early Bird Offer: 50% discount for the first 1,000 annual subscribers.
+
+5. KEY MESSAGING
+"Master your day with Apex. The only productivity tool you need."
+
+6. LAUNCH TIMELINE
+- T-4 Weeks: Teaser campaign starts.
+- T-2 Weeks: Open beta for waitlist (500 users).
+- Launch Day: Global release, press release distribution, launch party live stream.
+- T+1 Week: First major update based on user feedback.
+
+7. SUCCESS METRICS (KPIs)
+- CAC (Customer Acquisition Cost): Target < $15
+- DAU (Daily Active Users): Target 2,000 by Day 7
+- Retention Rate: > 40% Week 1 retention
+
+8. RISKS
+- Server overload on launch day.
+- Negative reviews due to initial bugs.
+`.repeat(8),
+        prompts: [
+            {
+                label: "Refine Pricing",
+                instruction: "In Section 4, add a 'Team Plan' tier for enterprise users at $49/month per seat.",
+                section: "Section 4"
+            },
+            {
+                label: "Expand Social Strategy",
+                instruction: "Update Section 3(a) to include LinkedIn Organic posts targeting professionals.",
+                section: "Section 3"
+            },
+            {
+                label: "Mitigate Risks",
+                instruction: "Add a mitigation plan in Section 8 for 'Server Overload' involving auto-scaling groups and a CDN.",
+                section: "Section 8"
             }
         ]
     }

@@ -38,8 +38,8 @@ body {
 .main-content {
     display: flex;
     flex: 1;
-    overflow: visible;
-    /* Prevent parent scroll */
+    overflow: hidden;
+    /* Enforce internal scrolling */
     position: relative;
 }
 
@@ -48,7 +48,8 @@ body {
     background-color: var(--bs-body-bg);
     display: flex;
     flex-direction: column;
-    overflow: visible;
+    overflow: hidden;
+    /* Enforce internal quill scrolling */
     position: relative;
 }
 
@@ -95,7 +96,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    height: 100%;
+
 }
 
 .ql-editor {
