@@ -150,19 +150,41 @@ body {
 }
 
 .agent-highlight {
-  background-color: var(--agent-highlight-color, #fde68a);
-  border-radius: 2px;
-  padding: 0 2px;
+  background-color: transparent;
+  border-bottom: 2px solid var(--agent-highlight-color, #fde68a);
+  border-radius: 0;
+  padding: 0;
   cursor: pointer;
-  transition: box-shadow 0.2s ease, background-color 0.2s ease;
+  transition: all 0.2s ease;
 }
 
-.agent-highlight:hover {
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+.agent-highlight:hover,
+.agent-highlight--active {
+  background-color: var(--agent-highlight-color, #fde68a);
+  color: #000;
+  /* Ensure contrast */
+  border-radius: 2px;
+  border-bottom: none;
+  padding: 0 2px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .agent-highlight--pulse {
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+  animation: highlight-pulse 1.5s infinite;
+}
+
+@keyframes highlight-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
 }
 
 .agent-highlight-snippet {

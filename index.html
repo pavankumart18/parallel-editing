@@ -124,6 +124,11 @@
           class="d-flex align-items-center gap-2 px-4 py-2 bg-body-tertiary border-bottom overflow-x-auto"
           style="min-height: 50px; white-space: nowrap">
         </div>
+        <div id="editor-loading" class="position-absolute top-50 start-50 translate-middle text-center d-none"
+          style="z-index: 100;">
+          <div class="spinner-border text-primary mb-2" role="status" style="width: 3rem; height: 3rem;"></div>
+          <div class="text-muted fw-semibold">Loading Document...</div>
+        </div>
         <div id="editor"></div>
       </div>
 
@@ -184,8 +189,7 @@
         </div>
 
         <!-- Agents List -->
-        <div id="agents-container" class="p-3 flex-grow-1 bg-body position-relative"
-          style="min-height: 0">
+        <div id="agents-container" class="p-3 flex-grow-1 bg-body position-relative" style="min-height: 0">
           <div class="text-center text-muted mt-4 small">
             <i class="bi bi-robot fs-3 d-block mb-2 opacity-50"></i>
             Waiting for task...

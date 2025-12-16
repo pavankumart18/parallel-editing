@@ -32,7 +32,7 @@ class AgentHighlightBlot extends Inline {
     if (payload.color) {
       node.style.setProperty("--agent-highlight-color", payload.color);
     }
-    node.style.backgroundColor = payload.color || "#fde68a";
+    // Background handled by CSS classes (.agent-highlight vs .agent-highlight--active)
     return node;
   }
 
@@ -415,27 +415,43 @@ function selectDocument(docId, source = "demo", options = {}) {
     skipScroll = false,
   } = options;
 
-  state.docVersion++; // Invalidate running agents
-
   const doc = DOCUMENTS.find((d) => d.id === docId) || DOCUMENTS[0];
   if (!doc) return null;
 
+  // 1. Immediate UI Updates (Optimistic)
   state.selectedDocId = doc.id;
   renderDemoCards();
   renderPromptBar(doc);
-
-  if (applyContent) {
-    replaceDocumentText(doc.content, `${source}-load`);
-  }
 
   if (broadcast && state.ydoc) {
     state.ydoc.getMap("app-state").set("selectedDocId", doc.id);
   }
 
-  if (!silent && source !== "remote") {
-    showToast(`Loaded demo: ${doc.title}`);
-    updateActivityLog(`Loaded demo: ${doc.title}`, "info");
-    if (!skipScroll) scrollEditorIntoView();
+  // 2. Defer heavy content replacement to avoid freezing the UI
+  if (applyContent) {
+    // Show loader
+    const loader = document.getElementById("editor-loading");
+    const editorEl = document.getElementById("editor");
+    if (loader) loader.classList.remove("d-none");
+    if (editorEl) editorEl.style.opacity = "0.3";
+
+    // Show a temporary loading indicator if needed, or just let the loop breathe
+    setTimeout(() => {
+      state.docVersion++; // Invalidate running agents
+      replaceDocumentText(doc.content, `${source}-load`);
+
+      if (!silent && source !== "remote") {
+        showToast(`Loaded demo: ${doc.title}`);
+        updateActivityLog(`Loaded demo: ${doc.title}`, "info");
+        if (!skipScroll) scrollEditorIntoView();
+      }
+
+      // Hide loader
+      if (loader) loader.classList.add("d-none");
+      if (editorEl) editorEl.style.opacity = "1";
+    }, 300); // Increased delay to ensure loader renders and prevent UI freeze perception
+  } else {
+    state.docVersion++;
   }
 
   return doc;
@@ -1118,6 +1134,7 @@ async function applyOperations(operations, agentId, name, color, context = {}) {
         reason: context.reason || `Updated ${context.section || "document"}`,
         section: context.section || "Document",
         color,
+        originalText: match, // Store original for revert
       });
       if (highlightId) {
         updateActivityLog(
@@ -1176,6 +1193,7 @@ async function applySmartDiffV2(oldText, newText, agentId, name, color, context 
             reason: context.reason || `Updated ${context.section || "document"}`,
             section: context.section || "Document",
             color,
+            originalText: "", // Insertion: original was empty
           });
           if (highlightId) {
             updateActivityLog(
@@ -1346,6 +1364,7 @@ function registerAgentHighlight(agentId, start, length, meta = {}) {
       relPos: encoded,
       length,
       snippet,
+      originalText: meta.originalText || "",
       createdAt: Date.now(),
     };
 
@@ -1404,9 +1423,15 @@ function focusHighlightById(highlightId, options = {}) {
     const targetIndex = absPos.index;
     state.quill.setSelection(targetIndex, data.length, "api");
     scrollIndexIntoView(targetIndex);
+
+    // Deactivate others
+    document.querySelectorAll(".agent-highlight--active").forEach(el => el.classList.remove("agent-highlight--active"));
+
     if (options.flash !== false) {
-      flashHighlightDom(highlightId);
+      const nodes = state.quill?.root?.querySelectorAll(`mark.agent-highlight[data-agent-highlight-id="${highlightId}"]`);
+      nodes?.forEach((node) => node.classList.add("agent-highlight--active"));
     }
+
     if (!options.skipPanel) {
       renderExplainPanel({ highlight: data });
     }
@@ -1415,6 +1440,67 @@ function focusHighlightById(highlightId, options = {}) {
     console.warn("Unable to focus highlight", error);
     return null;
   }
+}
+
+function acceptHighlight(highlightId) {
+  const data = state.highlights.get(highlightId);
+  if (!data) return;
+
+  // 1. Remove Format (Visuals)
+  try {
+    const compiled = new Uint8Array(data.relPos);
+    const relPos = Y.decodeRelativePosition(compiled);
+    const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
+    if (absPos) {
+      state.quill.formatText(absPos.index, data.length, "agent-highlight", false, "api");
+    }
+  } catch (e) { console.warn("Accept error", e); }
+
+  // 2. Remove Metadata
+  state.highlightStore.delete(highlightId);
+  state.highlights.delete(highlightId);
+
+  // 3. UI Update
+  renderExplainPanel(null);
+  showToast("Change approved.");
+}
+
+function revertHighlight(highlightId) {
+  const data = state.highlights.get(highlightId);
+  if (!data) {
+    showToast("Cannot find edit to revert.", true);
+    return;
+  }
+
+  const { originalText } = data;
+
+  // 1. Revert Text
+  try {
+    const compiled = new Uint8Array(data.relPos);
+    const relPos = Y.decodeRelativePosition(compiled);
+    const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
+
+    if (absPos) {
+      state.ydoc.transact(() => {
+        state.ytext.delete(absPos.index, data.length);
+        if (originalText) {
+          state.ytext.insert(absPos.index, originalText);
+        }
+      }, "revert");
+    }
+  } catch (e) {
+    console.error("Revert failed", e);
+    showToast("Failed to revert change.", true);
+    return;
+  }
+
+  // 2. Remove Metadata
+  state.highlightStore.delete(highlightId);
+  state.highlights.delete(highlightId);
+
+  // 3. UI Update
+  renderExplainPanel(null);
+  showToast("Change reverted.");
 }
 
 function scrollIndexIntoView(index) {
@@ -1493,8 +1579,22 @@ function renderExplainPanel(config = null) {
       <button class="btn btn-outline-secondary btn-sm mt-2 highlight-jump" data-highlight-jump="${highlight.id}">
         Scroll to edit
       </button>
+      <div class="d-flex gap-2 mt-2 pt-2 border-top">
+        <button class="btn btn-sm btn-success flex-grow-1 fw-bold" id="btn-approve-${highlight.id}">
+            <i class="bi bi-check-lg me-1"></i> Keep
+        </button>
+        <button class="btn btn-sm btn-outline-danger flex-grow-1 fw-bold" id="btn-revert-${highlight.id}">
+            <i class="bi bi-arrow-counterclockwise me-1"></i> Revert
+        </button>
+      </div>
     `;
     panel.dataset.mode = "highlight";
+
+    // Bind buttons immediately
+    requestAnimationFrame(() => {
+      document.getElementById(`btn-approve-${highlight.id}`)?.addEventListener("click", () => acceptHighlight(highlight.id));
+      document.getElementById(`btn-revert-${highlight.id}`)?.addEventListener("click", () => revertHighlight(highlight.id));
+    });
   }
 }
 
