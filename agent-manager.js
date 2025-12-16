@@ -9,18 +9,19 @@ export class AgentManager {
   /**
    * Spawns a new agent with a specific role/task
    */
-  spawnAgent(name, role, color, prompt, section) {
+  spawnAgent(name, role, color, prompt, section, purpose = "") {
     const id = `agent-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const agent = {
       id,
       name,
       role,
       color,
+      purpose,
       prompt,
       section,
       status: "idle", // idle, working, done, error
       logs: [],
-      progress: 0,
+      progress: 5,
     };
     this.agents.set(id, agent);
     this.render();
@@ -35,8 +36,9 @@ export class AgentManager {
     if (!agent) return;
 
     agent.status = "working";
+    agent.progress = 25;
     agent.logs.push(`Started task: ${agent.prompt.label}`);
-    this.render();
+    this.renderAgent(agent);
 
     if (this.onTaskStart) {
       this.onTaskStart(agent.id, agent.prompt)
@@ -49,6 +51,7 @@ export class AgentManager {
         .catch((err) => {
           agent.status = "error";
           agent.logs.push(`Error: ${err.message}`);
+          agent.progress = 100;
           this.renderAgent(agent);
           // Show global toast for visibility
           // Using a global function if available
@@ -61,6 +64,10 @@ export class AgentManager {
     const agent = this.agents.get(id);
     if (agent) {
       agent.logs.push(message);
+      if (agent.status === "working") {
+        agent.progress = Math.min(95, agent.progress + 5);
+        this.updateProgressVisual(agent);
+      }
       // Only re-render if visible or optimize
       const logEl = document.getElementById(`log-${id}`);
       if (logEl) {
@@ -101,10 +108,12 @@ export class AgentManager {
         el.innerHTML = this.getAgentTemplate(agent);
         // DESCENDING ORDER: Newest first
         this.container.prepend(el);
+        this.updateProgressVisual(agent);
       } else {
         // Update status only
         const statusEl = el.querySelector(".agent-status-badge");
         if (statusEl) statusEl.innerHTML = this.getStatusHtml(agent.status);
+        this.updateProgressVisual(agent);
       }
     });
   }
@@ -114,29 +123,36 @@ export class AgentManager {
     const el = document.getElementById(`card-${agent.id}`);
     if (el) {
       el.innerHTML = this.getAgentTemplate(agent);
+      this.updateProgressVisual(agent);
     }
   }
 
   getAgentTemplate(agent) {
     const borderStyle = `border-left: 3px solid ${agent.color} !important;`;
+    const purpose = agent.purpose || agent.prompt?.label || agent.role;
+    const targetLabel = agent.section || "Document";
+    const taskLabel = agent.prompt?.label || "Ad-hoc edit";
     return `
-            <div class="card-body p-2" style="${borderStyle}">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <div style="line-height: 1.2;">
-                        <strong style="color:${agent.color}; font-size: 0.75rem;">${agent.name}</strong>
-                        <span class="text-muted" style="font-size: 0.7rem;">(${agent.role})</span>
+            <div class="card-body p-2" style="${borderStyle}" data-agent-card="${agent.id}">
+                <div class="d-flex justify-content-between align-items-start mb-1 gap-2">
+                    <div>
+                        <div class="fw-bold" style="color:${agent.color}; font-size: 0.8rem;">${this.escape(agent.name)}</div>
+                        <div class="text-muted" style="font-size: 0.7rem;">${this.escape(agent.role)}</div>
                     </div>
-                    <div class="agent-status-badge scale-90" style="transform-origin: right center;">${
-      this.getStatusHtml(agent.status)
-    }</div>
+                    <div class="agent-status-badge scale-90 text-nowrap" style="transform-origin: right center;">${this.getStatusHtml(agent.status)}</div>
                 </div>
-                <div class="text-muted mb-1 text-truncate" style="font-size: 0.65rem;">
-                    Target: <strong>${agent.section}</strong>
+                <div class="text-muted small mb-2">${this.escape(purpose)}</div>
+                <div class="d-flex justify-content-between align-items-center text-muted" style="font-size: 0.65rem;">
+                    <span><i class="bi bi-crosshair me-1"></i>${this.escape(targetLabel)}</span>
+                    <span><i class="bi bi-lightning me-1"></i>${this.escape(taskLabel)}</span>
+                </div>
+                <div class="progress progress-thin my-2" style="height: 4px;">
+                    <div class="progress-bar" id="progress-${agent.id}" role="progressbar" style="width: ${agent.progress}%"></div>
                 </div>
                 <div class="bg-dark text-success p-1 rounded font-monospace" 
                      id="log-${agent.id}" 
                      style="height: 50px; overflow-y: auto; font-size: 0.65rem; line-height: 1.3;">
-                    ${agent.logs.map(l => `<div class="text-truncate">> ${l}</div>`).join("")}
+                    ${agent.logs.map(l => `<div class="text-truncate">> ${this.escape(l)}</div>`).join("")}
                 </div>
             </div>
         `;
@@ -145,13 +161,38 @@ export class AgentManager {
   getStatusHtml(status) {
     switch (status) {
       case "working":
-        return `<span class="badge bg-warning text-dark"><span class="spinner-grow spinner-grow-sm me-1" style="width:6px;height:6px"></span>Working</span>`;
+        return `<span class="badge bg-warning text-dark"><span class="spinner-grow spinner-grow-sm me-1" style="width:6px;height:6px"></span>Running</span>`;
       case "done":
-        return `<span class="badge bg-success">Done</span>`;
+        return `<span class="badge bg-success">Completed</span>`;
       case "error":
-        return `<span class="badge bg-danger">Error</span>`;
+        return `<span class="badge bg-danger">Failed</span>`;
       default:
         return `<span class="badge bg-secondary">Idle</span>`;
     }
+  }
+
+  updateProgressVisual(agent) {
+    const bar = document.getElementById(`progress-${agent.id}`);
+    if (!bar) return;
+    bar.style.width = `${agent.progress}%`;
+    bar.className = "progress-bar";
+    if (agent.status === "working") {
+      bar.classList.add("bg-info", "progress-bar-striped", "progress-bar-animated");
+    } else if (agent.status === "done") {
+      bar.classList.add("bg-success");
+    } else if (agent.status === "error") {
+      bar.classList.add("bg-danger");
+    } else {
+      bar.classList.add("bg-secondary");
+    }
+  }
+
+  escape(value = "") {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 }

@@ -74,6 +74,10 @@
                 <i class="bi bi-hash me-1"></i>
                 <span id="room-name">room</span>
               </div>
+              <div class="presence-wrapper text-white-50 small d-flex flex-column gap-1">
+                <span class="text-uppercase fw-semibold" style="font-size: 0.6rem;">Humans</span>
+                <div id="presence-indicators" class="d-flex flex-wrap gap-1"></div>
+              </div>
             </li>
           </ul>
 
@@ -85,17 +89,10 @@
             <input type="file" id="file-upload" accept=".txt,.md,.doc,.docx,.pdf" hidden>
 
             <button id="btn-share" class="btn btn-outline-warning btn-sm d-flex align-items-center gap-2">
-              <i class="bi bi-share"></i> <span class="d-none d-md-inline">Share</span>
+              <i class="bi bi-share"></i> <span class="d-none d-md-inline">Share Link</span>
             </button>
             <button id="btn-download" class="btn btn-outline-light btn-sm d-flex align-items-center gap-2">
               <i class="bi bi-download"></i> <span class="d-none d-md-inline">Download</span>
-            </button>
-            <button id="btn-template" class="btn btn-outline-light btn-sm d-flex align-items-center gap-2">
-              <i class="bi bi-file-earmark-text"></i> <span class="d-none d-md-inline">Template</span>
-            </button>
-            <button id="btn-settings" class="btn btn-outline-light btn-sm" data-bs-toggle="modal"
-              data-bs-target="#settingsModal">
-              <i class="bi bi-gear"></i>
             </button>
             <!-- Theme Toggle -->
             <button id="btn-theme-toggle" class="btn btn-outline-light btn-sm">
@@ -126,7 +123,6 @@
         <div id="agent-prompts-bar"
           class="d-flex align-items-center gap-2 px-4 py-2 bg-body-tertiary border-bottom overflow-x-auto"
           style="min-height: 50px; white-space: nowrap">
-          <span class="badge bg-secondary opacity-50 fw-normal">Select a doc...</span>
         </div>
         <div id="editor"></div>
       </div>
@@ -167,6 +163,15 @@
                 <div class="text-muted fst-italic">System initialized...</div>
               </div>
             </div>
+
+            <div class="border-top pt-3">
+              <h6 class="fw-bold mb-2 text-uppercase text-secondary" style="font-size: 0.7rem">
+                Explain This Edit
+              </h6>
+              <div id="explain-panel" class="bg-body-tertiary border rounded p-3 small text-muted">
+                Click highlighted text or an agent card to see what changed.
+              </div>
+            </div>
           </div>
         </div>
 
@@ -179,7 +184,7 @@
         </div>
 
         <!-- Agents List -->
-        <div id="agents-container" class="p-3 flex-grow-1 overflow-y-auto bg-body position-relative"
+        <div id="agents-container" class="p-3 flex-grow-1 bg-body position-relative"
           style="min-height: 0">
           <div class="text-center text-muted mt-4 small">
             <i class="bi bi-robot fs-3 d-block mb-2 opacity-50"></i>

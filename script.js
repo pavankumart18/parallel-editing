@@ -11,11 +11,56 @@ import { APP_CONFIG, CARDS, DEFAULTS, DOCUMENTS } from "./config.js";
 
 Quill.register("modules/cursors", QuillCursors);
 
+const Inline = Quill.import("blots/inline");
+
+class AgentHighlightBlot extends Inline {
+  static create(value) {
+    const node = super.create();
+    let payload = {};
+    if (typeof value === "string") {
+      try {
+        payload = JSON.parse(value);
+      } catch {
+        payload = {};
+      }
+    } else if (value && typeof value === "object") {
+      payload = value;
+    }
+    node.dataset.agentHighlightId = payload.id || "";
+    node.dataset.agentHighlightColor = payload.color || "";
+    node.classList.add("agent-highlight");
+    if (payload.color) {
+      node.style.setProperty("--agent-highlight-color", payload.color);
+    }
+    node.style.backgroundColor = payload.color || "#fde68a";
+    return node;
+  }
+
+  static formats(node) {
+    const id = node.dataset.agentHighlightId;
+    const color = node.dataset.agentHighlightColor;
+    if (!id) return null;
+    return JSON.stringify({ id, color });
+  }
+}
+AgentHighlightBlot.blotName = "agent-highlight";
+AgentHighlightBlot.tagName = "mark";
+AgentHighlightBlot.className = "agent-highlight";
+Quill.register(AgentHighlightBlot);
+
 // DOM Helper (Uniformity Guideline)
 const $ = document.querySelector.bind(document);
 
 const SETTINGS_KEY = "parallel_edit_settings";
 const TEMPLATE_TEXT = DOCUMENTS[0].content;
+const MODEL_GUARDRAILS = [
+  {
+    matcher: /gpt-5-mini/i,
+    blockedParams: ["temperature"],
+    message: "Temperature is not supported for GPT-5-mini",
+  },
+];
+const MODEL_WARNINGS_SEEN = new Set();
 
 function deriveAiColor(hex, offset = 35) {
   if (typeof hex !== "string" || !/^#([0-9a-f]{6})$/i.test(hex)) return "#8b5cf6";
@@ -53,7 +98,6 @@ const roomNameEl = $("#room-name");
 const collaboratorCountEl = $("#collaborator-count");
 const shareBtn = $("#btn-share");
 const downloadBtn = $("#btn-download");
-const templateBtn = $("#btn-template");
 const uploadInput = $("#file-upload");
 const applyBtn = $("#btn-apply-ai");
 const instructionInput = $("#ai-instruction");
@@ -80,6 +124,8 @@ const state = {
   awareness: null,
   quill: null,
   cursorModule: null,
+  highlightStore: null,
+  highlights: new Map(),
   userName: null,
   userAlias: null,
   userNumber: null,
@@ -111,6 +157,9 @@ state.awareness = collab.awareness;
 state.quill = initQuill(state.ytext, state.awareness);
 state.cursorModule = state.quill.getModule("cursors");
 setupAgentCursorSync();
+setupHighlightStore();
+attachExplainabilityListeners();
+renderPresenceIndicators();
 
 // --- Activity Logging Setup ---
 updateActivityLog(`Connecting to room: ${roomName}...`);
@@ -119,6 +168,7 @@ state.awareness.on("change", () => {
   const states = state.awareness.getStates();
   $("#collaborator-count").innerText = states.size;
   updateActivityLog(`Collaborators count: ${states.size}`);
+  renderPresenceIndicators();
 });
 
 state.webrtcProvider.on("status", (event) => {
@@ -157,14 +207,13 @@ renderTemplatesGrid();
 renderPromptBar(null);
 renderHero();
 renderDemoCards();
-setupTemplateButton();
 attachEventListeners();
 updateAiModeBadge();
 setupThemeToggle();
 bootstrapDocSelection();
 
 // --- Activity Logger ---
-function updateActivityLog(message, type = "info") {
+function updateActivityLog(message, type = "info", meta = null) {
   const logContainer = $("#activity-log");
   if (!logContainer) return;
 
@@ -183,6 +232,11 @@ function updateActivityLog(message, type = "info") {
   if (type === "error") colorClass = "text-danger";
 
   entry.innerHTML = `<span class="opacity-50 me-2">[${time}]</span><span class="${colorClass}">${message}</span>`;
+  if (meta?.highlightId) {
+    entry.dataset.highlightId = meta.highlightId;
+    entry.dataset.agentId = meta.agentId || "";
+    entry.classList.add("activity-log-link");
+  }
   logContainer.prepend(entry); // Newest top
 }
 
@@ -261,7 +315,7 @@ function renderPromptBar(doc) {
   if (!container) return;
 
   if (!doc) {
-    render(html`<span class="badge bg-secondary opacity-50 fw-normal">Select a doc...</span>`, container);
+    render(html``, container);
     return;
   }
 
@@ -347,9 +401,10 @@ function handlePromptRun(prompt) {
     return;
   }
 
-  const role = getAgentRoleForSection(prompt.section);
+  const role = getAgentRole(prompt);
   const userName = state.userName || "User";
-  agentManager.spawnAgent(`${role.name} (${userName})`, role.role, role.color, prompt, prompt.section);
+  const purposeLine = `${role.purpose} - Requested by ${userName}`;
+  agentManager.spawnAgent(role.name, role.role, role.color, prompt, prompt.section, purposeLine);
 }
 
 function selectDocument(docId, source = "demo", options = {}) {
@@ -384,20 +439,6 @@ function selectDocument(docId, source = "demo", options = {}) {
   }
 
   return doc;
-}
-
-// Ensure the modal can be opened from the top bar button too
-function setupTemplateButton() {
-  const btn = $("#btn-template");
-  if (btn) {
-    btn.onclick = () => {
-      renderTemplatesGrid();
-      const modal = new bootstrap.Modal(document.getElementById("templatesModal"));
-      modal.show();
-    };
-    btn.removeAttribute("data-bs-toggle");
-    btn.removeAttribute("data-bs-target");
-  }
 }
 
 function bootstrapDocSelection() {
@@ -465,17 +506,47 @@ function setupThemeToggle() {
   }
 }
 
-function getAgentRoleForSection(section) {
-  if (section.includes("Legal") || section.includes("Indemnification") || section.includes("Liab")) {
-    return { name: "Legal Bot", role: "Legal Counsel", color: "#ef4444" };
+function getAgentRole(prompt) {
+  const text = ((prompt.section || "") + " " + (prompt.label || "") + " " + (prompt.instruction || "")).toLowerCase();
+
+  if (text.includes("legal") || text.includes("indemn") || text.includes("liab")) {
+    return {
+      name: "Liability Strengthener",
+      role: "Risk Counsel",
+      purpose: "Fortifies indemnification and insurance clauses.",
+      color: "#ef4444",
+    };
   }
-  if (section.includes("Budget") || section.includes("Financ")) {
-    return { name: "Finance Bot", role: "Controller", color: "#10b981" };
+  if (text.includes("budget") || text.includes("rent") || text.includes("financ") || text.includes("pricing") || text.includes("cost")) {
+    return {
+      name: "Budget Balancer",
+      role: "Finance Strategist",
+      purpose: "Keeps rents, escalators, and deposits aligned.",
+      color: "#10b981",
+    };
   }
-  if (section.includes("Security") || section.includes("Tech")) {
-    return { name: "SecOps Bot", role: "Security", color: "#f59e0b" };
+  if (text.includes("security") || text.includes("tech") || text.includes("policy") || text.includes("mfa") || text.includes("password")) {
+    return {
+      name: "Security Sentinel",
+      role: "SecOps Specialist",
+      purpose: "Locks down MFA, BYOD, and acceptable use posture.",
+      color: "#f59e0b",
+    };
   }
-  return { name: "Editor Bot", role: "Copy Editor", color: "#3b82f6" };
+  if (text.includes("launch") || text.includes("market") || text.includes("social")) {
+    return {
+      name: "GTM Guru",
+      role: "Marketing Lead",
+      purpose: "Optimizes launch strategy and communication channels.",
+      color: "#8b5cf6",
+    };
+  }
+  return {
+    name: "Clarity Editor",
+    role: "Simplification Specialist",
+    purpose: "Improves readability, tone, and parallel structure.",
+    color: "#3b82f6",
+  };
 }
 
 function loadSettings() {
@@ -653,9 +724,6 @@ function initQuill(ytext, awareness) {
 function attachEventListeners() {
   shareBtn.addEventListener("click", copyRoomLink);
   downloadBtn?.addEventListener("click", downloadCurrentDocument);
-  templateBtn.addEventListener("click", () => {
-    loadTemplate();
-  });
   uploadInput.addEventListener("change", handleUpload);
   applyBtn.addEventListener("click", () => {
     const text = instructionInput.value.trim();
@@ -715,12 +783,14 @@ function attachEventListeners() {
 function copyRoomLink() {
   const url = window.location.href;
   if (navigator.share) {
-    navigator.share({ title: "ParallelEdit room", url }).catch(() => { });
+    navigator.share({ title: "ParallelEdit room", url })
+      .then(() => showToast("Session link sent. Anyone with the link can join."))
+      .catch(() => { });
     return;
   }
   navigator.clipboard.writeText(url)
-    .then(() => showToast("Room link copied"))
-    .catch(() => showToast("Unable to copy link automatically.", true));
+    .then(() => showToast("Session link copied. Anyone with the link can join."))
+    .catch(() => showToast("Unable to copy automatically. Share this URL so teammates can join.", true));
 }
 
 function downloadCurrentDocument() {
@@ -843,6 +913,12 @@ async function runAgentAi(agentId, promptObj) {
     agent.color,
     instruction,
     (msg) => agentManager.updateAgentLog(agentId, msg),
+    {
+      reason: agent.prompt?.label || agent.prompt?.instruction?.slice(0, 80),
+      section: agent.section,
+      agentRole: agent.role,
+      agentPurpose: agent.purpose,
+    },
   );
 }
 
@@ -866,10 +942,12 @@ Example: Request "Fix headers and update dates" -> tasks: [{ "role": "Formatter"
       response_format: { type: "json_object" },
     };
 
+    const orchestratorBody = applyModelGuardrails(body, "orchestrator");
+
     const res = await fetch(`${state.baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.apiKey}` },
-      body: JSON.stringify(body),
+      body: JSON.stringify(orchestratorBody),
     });
 
     const data = await res.json();
@@ -877,11 +955,22 @@ Example: Request "Fix headers and update dates" -> tasks: [{ "role": "Formatter"
 
     if (plan.tasks && plan.tasks.length > 0) {
       // Spawn parallel agents
-      plan.tasks.forEach(task => {
-        agentManager.spawnAgent(`${task.name} (${state.userName})`, task.role, deriveAiColor(task.role), {
-          label: "Manual Task",
-          instruction: task.instruction,
-        }, task.section_context);
+      plan.tasks.forEach((task, index) => {
+        const agentColor = deriveAiColor(state.userColor || "#6366f1", 15 * (index + 1));
+        const purpose = task.section_context
+          ? `Focus: ${task.section_context} · ${task.role}`
+          : task.role || "Specialist task";
+        agentManager.spawnAgent(
+          task.name || task.role || "Specialist",
+          task.role || "Specialist",
+          agentColor,
+          {
+            label: task.name || "Manual Task",
+            instruction: task.instruction,
+          },
+          task.section_context || "General",
+          `${purpose} - Requested by ${state.userName || "Host"}`,
+        );
       });
       return;
     }
@@ -890,16 +979,17 @@ Example: Request "Fix headers and update dates" -> tasks: [{ "role": "Formatter"
   }
 
   // 2. Fallback (Single Agent)
-  const agentName = `${state.userName || "User"} (AI)`;
-  const agentColor = state.aiColor;
+  const agentName = "Manual Override";
+  const agentColor = state.aiColor || "#8b5cf6";
+  const defaultRole = getAgentRoleForSection("general");
 
   agentManager.spawnAgent(agentName, "Manual Override", agentColor, {
     label: "Manual Instruction",
     instruction: instruction,
-  }, "General");
+  }, "General", `${defaultRole.purpose} - Manual instruction from ${state.userName || "Host"}`);
 }
 
-async function runLiveAiTask(agentId, name, color, instruction, logFn) {
+async function runLiveAiTask(agentId, name, color, instruction, logFn, context = {}) {
   const currentText = state.ytext.toString();
   const body = {
     model: state.model,
@@ -942,10 +1032,12 @@ async function runLiveAiTask(agentId, name, color, instruction, logFn) {
     ],
   };
 
+  const requestBody = applyModelGuardrails(body, "live-task");
+
   const response = await fetch(`${state.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.apiKey}` },
-    body: JSON.stringify(body),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -965,19 +1057,19 @@ async function runLiveAiTask(agentId, name, color, instruction, logFn) {
 
   if (operations.length) {
     if (logFn) logFn(`Applying ${operations.length} edits...`);
-    await applyOperations(operations, agentId, name, color);
+    await applyOperations(operations, agentId, name, color, context);
   } else {
     // Fallback: if text returned, diff it
     if (typeof rawContent === "string" && rawContent.length > 5) {
       if (logFn) logFn("Applying smart diff...");
-      await applySmartDiffV2(currentText, rawContent, agentId, name, color);
+      await applySmartDiffV2(currentText, rawContent, agentId, name, color, context);
     } else {
       if (logFn) logFn("No edits returned.");
     }
   }
 }
 
-async function applyOperations(operations, agentId, name, color) {
+async function applyOperations(operations, agentId, name, color, context = {}) {
   const startVersion = state.docVersion;
   for (const op of operations) {
     if (state.docVersion !== startVersion) break;
@@ -1017,10 +1109,28 @@ async function applyOperations(operations, agentId, name, color) {
         }
       }, agentId);
     }
+
+    if (replacement.length && state.docVersion === startVersion) {
+      const highlightId = registerAgentHighlight(agentId, idx, replacement.length, {
+        agentName: name,
+        agentRole: context.agentRole,
+        agentPurpose: context.agentPurpose,
+        reason: context.reason || `Updated ${context.section || "document"}`,
+        section: context.section || "Document",
+        color,
+      });
+      if (highlightId) {
+        updateActivityLog(
+          `${name} updated ${context.section || "the document"}`,
+          "success",
+          { highlightId, agentId },
+        );
+      }
+    }
   }
 }
 
-async function applySmartDiffV2(oldText, newText, agentId, name, color) {
+async function applySmartDiffV2(oldText, newText, agentId, name, color, context = {}) {
   const startVersion = state.docVersion;
   const changes = diff(oldText, newText);
   let headAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, 0);
@@ -1045,6 +1155,7 @@ async function applySmartDiffV2(oldText, newText, agentId, name, color) {
     } else if (action === 1) { // INS
       const startPos = Y.createAbsolutePositionFromRelativePosition(headAnchor, state.ydoc);
       if (startPos) {
+        const chunkStart = startPos.index;
         let instAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, startPos.index);
         for (const char of chunk) {
           const abs = Y.createAbsolutePositionFromRelativePosition(instAnchor, state.ydoc);
@@ -1056,6 +1167,23 @@ async function applySmartDiffV2(oldText, newText, agentId, name, color) {
             instAnchor = Y.createRelativePositionFromTypeIndex(state.ytext, abs.index + 1);
           }
           // wait(5) // fast
+        }
+        if (chunk.length && state.docVersion === startVersion) {
+          const highlightId = registerAgentHighlight(agentId, chunkStart, chunk.length, {
+            agentName: name,
+            agentRole: context.agentRole,
+            agentPurpose: context.agentPurpose,
+            reason: context.reason || `Updated ${context.section || "document"}`,
+            section: context.section || "Document",
+            color,
+          });
+          if (highlightId) {
+            updateActivityLog(
+              `${name} updated ${context.section || "the document"}`,
+              "success",
+              { highlightId, agentId },
+            );
+          }
         }
         headAnchor = instAnchor;
       }
@@ -1146,6 +1274,334 @@ function setupAgentCursorSync() {
   state.ytext.observe(() => {
     debouncedRefresh();
   });
+}
+
+function renderPresenceIndicators() {
+  const container = document.getElementById("presence-indicators");
+  if (!container || !state.awareness) return;
+  const states = Array.from(state.awareness.getStates().entries());
+  if (!states.length) {
+    container.innerHTML = `<span class="text-muted small">Waiting for collaborators...</span>`;
+    return;
+  }
+
+  const chips = states.map(([clientId, data]) => {
+    const user = data?.user || {};
+    const isSelf = state.ydoc && clientId === state.ydoc.clientID;
+    const label = isSelf ? "You" : (user.name || user.alias || `User ${clientId}`);
+    const color = user.color || "#38bdf8";
+    return `<span class="presence-pill" style="--presence-color:${color};">${escapeHtml(label)}</span>`;
+  });
+  container.innerHTML = chips.join("");
+}
+
+function setupHighlightStore() {
+  if (!state.ydoc) return;
+  const store = state.ydoc.getMap("agent-highlights");
+  state.highlightStore = store;
+  state.highlights = new Map();
+
+  store.forEach((value, key) => {
+    const normalized = normalizeHighlightPayload(value);
+    if (normalized) {
+      state.highlights.set(key, normalized);
+    }
+  });
+
+  store.observe((event) => {
+    event.keysChanged.forEach((key) => {
+      if (store.has(key)) {
+        const normalized = normalizeHighlightPayload(store.get(key));
+        if (normalized) {
+          state.highlights.set(key, normalized);
+        }
+      } else {
+        state.highlights.delete(key);
+      }
+    });
+  });
+
+  renderExplainPanel();
+}
+
+function registerAgentHighlight(agentId, start, length, meta = {}) {
+  if (!state.quill || !state.ytext || length <= 0) return null;
+  if (!state.highlightStore && state.ydoc) {
+    state.highlightStore = state.ydoc.getMap("agent-highlights");
+  }
+  try {
+    const relPos = Y.createRelativePositionFromTypeIndex(state.ytext, start);
+    const encoded = Array.from(Y.encodeRelativePosition(relPos));
+    const highlightId = `hl-${agentId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const snippet = state.ytext.toString().slice(start, start + length).trim();
+    const highlightData = {
+      id: highlightId,
+      agentId,
+      agentName: meta.agentName || "AI Agent",
+      agentRole: meta.agentRole || "",
+      agentPurpose: meta.agentPurpose || "",
+      reason: meta.reason || "Edited document",
+      section: meta.section || "Document",
+      color: meta.color || "#fde047",
+      relPos: encoded,
+      length,
+      snippet,
+      createdAt: Date.now(),
+    };
+
+    const blotPayload = JSON.stringify({ id: highlightId, color: highlightData.color });
+    state.quill.formatText(start, length, "agent-highlight", blotPayload, "api");
+
+    persistHighlight(highlightData);
+    return highlightId;
+  } catch (error) {
+    console.warn("Failed to register highlight", error);
+    return null;
+  }
+}
+
+function persistHighlight(highlightData) {
+  state.highlights.set(highlightData.id, highlightData);
+  if (!state.highlightStore) return;
+  state.ydoc.transact(() => {
+    state.highlightStore.set(highlightData.id, highlightData);
+  }, "agent-highlight-store");
+}
+
+function normalizeHighlightPayload(value) {
+  if (!value) return null;
+  const base = typeof value.toJSON === "function" ? value.toJSON() : { ...value };
+  if (Array.isArray(base.relPos)) {
+    base.relPos = base.relPos.slice();
+  } else if (base.relPos && typeof base.relPos.length === "number") {
+    base.relPos = Array.from(base.relPos);
+  } else {
+    base.relPos = [];
+  }
+  return base;
+}
+
+function focusHighlightById(highlightId, options = {}) {
+  if (!highlightId || !state.highlights.has(highlightId)) {
+    showToast("This edit can no longer be located.", true);
+    return null;
+  }
+  const data = state.highlights.get(highlightId);
+  try {
+    if (!data.relPos) {
+      showToast("Missing cursor data for this edit.", true);
+      return null;
+    }
+    const compiled = new Uint8Array(data.relPos);
+    const relPos = Y.decodeRelativePosition(compiled);
+    const absPos = Y.createAbsolutePositionFromRelativePosition(relPos, state.ydoc);
+    if (!absPos) {
+      showToast("That edit was removed from the draft.", true);
+      state.highlightStore?.delete(highlightId);
+      state.highlights.delete(highlightId);
+      return null;
+    }
+    const targetIndex = absPos.index;
+    state.quill.setSelection(targetIndex, data.length, "api");
+    scrollIndexIntoView(targetIndex);
+    if (options.flash !== false) {
+      flashHighlightDom(highlightId);
+    }
+    if (!options.skipPanel) {
+      renderExplainPanel({ highlight: data });
+    }
+    return data;
+  } catch (error) {
+    console.warn("Unable to focus highlight", error);
+    return null;
+  }
+}
+
+function scrollIndexIntoView(index) {
+  const bounds = state.quill?.getBounds(index, 1);
+  const editor = document.querySelector(".ql-editor");
+  if (!bounds || !editor) return;
+  const target = bounds.top + editor.scrollTop - editor.clientHeight / 4;
+  editor.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
+}
+
+function flashHighlightDom(highlightId) {
+  const nodes = state.quill?.root?.querySelectorAll(`mark.agent-highlight[data-agent-highlight-id="${highlightId}"]`);
+  nodes?.forEach((node) => {
+    node.classList.add("agent-highlight--pulse");
+    setTimeout(() => node.classList.remove("agent-highlight--pulse"), 1200);
+  });
+}
+
+function renderExplainPanel(config = null) {
+  const panel = document.getElementById("explain-panel");
+  if (!panel) return;
+  const safe = (value) => escapeHtml(value || "");
+
+  if (!config) {
+    panel.innerHTML = `
+      <div class="text-muted small">
+        Click a highlighted passage or agent card to see what changed.
+      </div>`;
+    panel.dataset.mode = "empty";
+    return;
+  }
+
+  if (Array.isArray(config.highlights)) {
+    if (!config.highlights.length) {
+      panel.innerHTML = `
+        <div class="small text-uppercase text-secondary fw-semibold mb-1">Agent</div>
+        <div class="fw-bold">${safe(config.title)}</div>
+        <div class="text-muted small mb-2">${safe(config.subtitle)}</div>
+        <div class="text-muted small">${safe(config.description || "No tracked edits yet.")}</div>`;
+      panel.dataset.mode = "agent";
+      return;
+    }
+
+    const entries = config.highlights.slice(0, 4).map((item, idx) => `
+      <button class="btn btn-link p-0 d-block text-start small highlight-jump" data-highlight-jump="${item.id}">
+        <span class="fw-semibold me-2">Edit ${idx + 1}</span>
+        <span class="text-muted">${safe(item.section || "Document")}</span>
+      </button>`).join("");
+    panel.innerHTML = `
+      <div class="small text-uppercase text-secondary fw-semibold mb-1">Agent</div>
+      <div class="fw-bold">${safe(config.title)}</div>
+      <div class="text-muted small mb-2">${safe(config.subtitle)}</div>
+      <div class="mb-2">${safe(config.description || "Select an edit below.")}</div>
+      <div class="d-flex flex-column gap-1">${entries}</div>
+      ${config.highlights.length > 4
+        ? `<div class="text-muted small mt-2">${config.highlights.length - 4}+ more edits</div>`
+        : ""}`;
+    panel.dataset.mode = "agent";
+    return;
+  }
+
+  if (config.highlight) {
+    const { highlight } = config;
+    panel.innerHTML = `
+      <div class="d-flex align-items-center justify-content-between mb-1">
+        <div>
+          <div class="small text-uppercase text-secondary fw-semibold">Agent</div>
+          <div class="fw-bold">${safe(highlight.agentName)}</div>
+        </div>
+        <span class="badge" style="background-color:${highlight.color || "#94a3b8"}20;color:${highlight.color || "#475569"}">
+          ${safe(highlight.section)}
+        </span>
+      </div>
+      <div class="small text-muted mb-2">${safe(highlight.reason)}</div>
+      <div class="agent-highlight-snippet">${safe(highlight.snippet || "Edited text")}</div>
+      <button class="btn btn-outline-secondary btn-sm mt-2 highlight-jump" data-highlight-jump="${highlight.id}">
+        Scroll to edit
+      </button>
+    `;
+    panel.dataset.mode = "highlight";
+  }
+}
+
+function attachExplainabilityListeners() {
+  const editorRoot = document.querySelector(".ql-editor");
+  if (editorRoot) {
+    editorRoot.addEventListener("click", (event) => {
+      const highlightEl = event.target.closest("mark.agent-highlight");
+      if (highlightEl?.dataset.agentHighlightId) {
+        focusHighlightById(highlightEl.dataset.agentHighlightId);
+      }
+    });
+  }
+
+  const logContainer = document.getElementById("activity-log");
+  if (logContainer) {
+    logContainer.addEventListener("click", (event) => {
+      const link = event.target.closest(".activity-log-link");
+      if (link?.dataset.highlightId) {
+        focusHighlightById(link.dataset.highlightId);
+      }
+    });
+  }
+
+  const agentsContainer = document.getElementById("agents-container");
+  if (agentsContainer) {
+    agentsContainer.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-agent-card]");
+      if (!card) return;
+      handleAgentCardInspect(card.dataset.agentCard);
+    });
+  }
+
+  const explainPanel = document.getElementById("explain-panel");
+  if (explainPanel) {
+    explainPanel.addEventListener("click", (event) => {
+      const trigger = event.target.closest(".highlight-jump");
+      if (trigger?.dataset.highlightJump) {
+        focusHighlightById(trigger.dataset.highlightJump);
+      }
+    });
+  }
+}
+
+function handleAgentCardInspect(agentId) {
+  if (!agentId) return;
+  const agent = agentManager.agents.get(agentId);
+  if (!agent) return;
+
+  const highlights = Array.from(state.highlights.values())
+    .filter((hl) => hl.agentId === agentId)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  if (!highlights.length) {
+    renderExplainPanel({
+      title: agent.name,
+      subtitle: agent.purpose || agent.role,
+      description: "No tracked edits yet. Run or wait for this agent to finish.",
+      highlights: [],
+    });
+    return;
+  }
+
+  renderExplainPanel({
+    title: agent.name,
+    subtitle: agent.purpose || agent.role,
+    description: agent.prompt?.label || agent.prompt?.instruction || "Agent edits",
+    highlights,
+  });
+  focusHighlightById(highlights[0].id, { skipPanel: true });
+}
+
+function applyModelGuardrails(payload, contextLabel = "request") {
+  const modelName = state.model || "";
+  if (!modelName) return payload;
+  const guard = MODEL_GUARDRAILS.find((entry) => entry.matcher.test(modelName));
+  if (!guard) return payload;
+
+  const sanitized = { ...payload };
+  const removed = [];
+  (guard.blockedParams || []).forEach((param) => {
+    if (param in sanitized) {
+      delete sanitized[param];
+      removed.push(param);
+    }
+  });
+
+  if (removed.length) {
+    const warningKey = `${guard.message}-${contextLabel}`;
+    if (!MODEL_WARNINGS_SEEN.has(warningKey)) {
+      MODEL_WARNINGS_SEEN.add(warningKey);
+      const message = `${guard.message}. Removed: ${removed.join(", ")}.`;
+      showToast(message, false);
+      updateActivityLog(`${message} (${contextLabel})`, "warning");
+    }
+  }
+
+  return sanitized;
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function wait(ms) {

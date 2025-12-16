@@ -79,7 +79,6 @@ body {
 }
 
 #agents-container {
-  overflow-y: auto;
   flex: 1;
 }
 
@@ -148,6 +147,64 @@ body {
   font-weight: 600;
   padding: 2px 4px;
   border-radius: 4px;
+}
+
+.agent-highlight {
+  background-color: var(--agent-highlight-color, #fde68a);
+  border-radius: 2px;
+  padding: 0 2px;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.agent-highlight:hover {
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+.agent-highlight--pulse {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
+}
+
+.agent-highlight-snippet {
+  font-family: "Merriweather", serif;
+  background-color: var(--bs-body-tertiary-bg);
+  border-radius: 6px;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  max-height: 90px;
+  overflow: hidden;
+}
+
+.activity-log-link {
+  cursor: pointer;
+}
+
+#explain-panel {
+  min-height: 120px;
+}
+
+.presence-wrapper {
+  min-width: 180px;
+}
+
+.presence-pill {
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f1f5f9;
+  border-radius: 999px;
+  padding: 0 0.35rem;
+  font-size: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.presence-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--presence-color, #f97316);
 }
 
 /* Animations & Indicators */
@@ -325,6 +382,10 @@ body {
 /* Agent Logs Scrollbar */
 .agent-log-container {
   scrollbar-width: thin;
+}
+
+.progress-thin {
+  background-color: var(--bs-secondary-bg);
 }
 
 /* Responsive Layout */
